@@ -80,7 +80,7 @@
     .fb-today:hover{background:rgba(238,77,45,.25);}
 
     /* ── KPIs ── */
-    .kpi-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;padding:16px 24px;}
+    .kpi-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;padding:16px 24px;}
     .kpi{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;position:relative;overflow:hidden;cursor:default;}
     .kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--kc,var(--shopee));}
     .kpi-icon{font-size:1.4rem;margin-bottom:6px;}
@@ -93,7 +93,9 @@
     .sec::after{content:'';flex:1;height:1px;background:var(--border);}
 
     /* ── CHARTS GRID ── */
-    .charts-row{display:grid;gap:12px;padding:0 24px;}
+    .charts-row{display:grid;gap:12px;padding:0 24px;margin-bottom:0;}
+    .charts-full{grid-template-columns:1fr;}
+    .charts-thirds{grid-template-columns:1fr 1fr 1fr;}
     .chart-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;}
     .chart-card h2{font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px;}
 
@@ -147,9 +149,158 @@
     ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
 
     code{font-family:'Consolas','Courier New',monospace;font-size:.72rem;color:#c4b5fd;}
+
+    /* ── JUSTIFY MODAL ── */
+    .jmodal-overlay{
+      position:fixed;inset:0;z-index:2000;
+      background:rgba(0,0,0,.65);backdrop-filter:blur(3px);
+      display:flex;align-items:center;justify-content:center;
+      opacity:0;pointer-events:none;transition:opacity .2s;
+    }
+    .jmodal-overlay.open{opacity:1;pointer-events:all;}
+    .jmodal{
+      background:var(--card);border:1px solid var(--border);border-radius:12px;
+      padding:22px 24px;width:480px;max-width:92vw;
+      box-shadow:0 20px 60px rgba(0,0,0,.6);
+      transform:translateY(10px);transition:transform .2s;
+    }
+    .jmodal-overlay.open .jmodal{transform:translateY(0);}
+    .jmodal-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px;gap:12px;}
+    .jmodal-title{font-size:.9rem;font-weight:700;color:var(--text);}
+    .jmodal-lt{font-size:.72rem;color:var(--muted);margin-top:3px;font-family:monospace;}
+    .jmodal-close{background:none;border:none;color:var(--muted);cursor:pointer;font-size:1.2rem;padding:0;line-height:1;}
+    .jmodal-close:hover{color:var(--text);}
+    .jmodal textarea{
+      width:100%;min-height:90px;resize:vertical;
+      background:var(--card2);border:1px solid var(--border);border-radius:8px;
+      color:var(--text);font-family:inherit;font-size:.82rem;padding:10px 12px;
+      outline:none;transition:border-color .15s;
+    }
+    .jmodal textarea:focus{border-color:var(--shopee);}
+    .jmodal-hint{font-size:.68rem;color:var(--muted);margin-top:6px;}
+    .jmodal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:14px;}
+    .jbtn{border:none;border-radius:7px;padding:7px 18px;font-size:.8rem;font-weight:600;cursor:pointer;font-family:inherit;transition:opacity .15s;}
+    .jbtn:hover{opacity:.85;}
+    .jbtn-cancel{background:var(--card2);color:var(--muted);}
+    .jbtn-save{background:var(--shopee);color:#fff;}
+    .jbtn-save:disabled{opacity:.5;cursor:not-allowed;}
+    .just-btn{
+      background:none;border:1px solid rgba(239,68,68,.4);border-radius:5px;
+      color:#fca5a5;font-size:.65rem;font-weight:600;cursor:pointer;padding:2px 7px;
+      white-space:nowrap;font-family:inherit;transition:all .15s;
+    }
+    .just-btn:hover{background:rgba(239,68,68,.15);}
+    .just-btn.has-just{border-color:rgba(34,197,94,.4);color:#86efac;}
+    .just-btn.has-just:hover{background:rgba(34,197,94,.1);}
+    .just-text{font-size:.68rem;color:#86efac;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;}
+
+    /* ── RESPONSIVE ── */
+
+    /* Tablet largo: 4 KPIs por linha */
+    @media(max-width:1200px){
+      .kpi-grid{grid-template-columns:repeat(3,1fr);}
+    }
+
+    /* Tablet: ajustes gerais */
+    @media(max-width:1024px){
+      header{padding:0 16px;gap:10px;}
+      header h1{font-size:.9rem;}
+      .hbadge:last-child{display:none;}
+      .filter-bar{padding:8px 16px;gap:10px;}
+      .kpi-grid{padding:12px 16px;gap:10px;}
+      .charts-row{padding:0 16px;}
+      .sec{padding:12px 16px 4px;}
+      .table-wrap{margin:0 16px 20px;}
+    }
+
+    /* Tablet pequeno: charts empilham */
+    @media(max-width:900px){
+      .kpi-grid{grid-template-columns:repeat(3,1fr);}
+      .charts-thirds{grid-template-columns:1fr;}
+      .chart-card{padding:14px;}
+    }
+
+    /* Mobile */
+    @media(max-width:640px){
+      body{font-size:12px;}
+
+      /* Header compacto */
+      header{padding:0 12px;height:48px;gap:8px;}
+      header h1{font-size:.8rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px;}
+      .hbadge{display:none;}
+
+      /* Filter bar vertical */
+      .filter-bar{
+        flex-direction:column;align-items:flex-start;
+        padding:10px 12px;gap:8px;
+      }
+      .fb-group{width:100%;flex-wrap:wrap;}
+      .fb-group:last-child{display:none;}
+      select{flex:1;min-width:0;}
+      .turno-btns{flex:1;}
+      .tb{flex:1;text-align:center;padding:6px 8px;}
+
+      /* KPIs: 2 colunas */
+      .kpi-grid{
+        grid-template-columns:repeat(2,1fr);
+        padding:10px 12px;gap:8px;
+      }
+      .kpi{padding:12px 14px;}
+      .kpi-icon{font-size:1.1rem;margin-bottom:4px;}
+      .kpi-val{font-size:1.5rem;}
+      .kpi-label{font-size:.62rem;}
+      .kpi-sub{font-size:.62rem;}
+
+      /* Seções e charts */
+      .sec{padding:10px 12px 4px;}
+      .charts-row{padding:0 12px;gap:8px;}
+      .chart-card{padding:12px;}
+      .chart-card h2{font-size:.65rem;}
+
+      /* Alert */
+      .alert{margin:8px 12px 0;padding:8px 12px;font-size:.75rem;}
+
+      /* Tabela: scroll horizontal */
+      .table-wrap{margin:0 12px 16px;}
+      .table-head{flex-direction:column;align-items:flex-start;gap:8px;padding:10px 12px;}
+      .table-controls{width:100%;}
+      .search-box{flex:1;width:100%;}
+      .table-scroll{max-height:320px;overflow-x:auto;}
+      table{min-width:760px;}
+      th,td{padding:6px 8px;font-size:.7rem;}
+
+      /* Top bars */
+      .top-bar-label{width:90px;font-size:.7rem;}
+    }
+
+    /* Mobile muito pequeno */
+    @media(max-width:380px){
+      .kpi-grid{grid-template-columns:1fr 1fr;}
+      .kpi-val{font-size:1.3rem;}
+      header h1{max-width:150px;}
+    }
   </style>
 </head>
 <body>
+
+<!-- JUSTIFY MODAL -->
+<div class="jmodal-overlay" id="jmodalOverlay" onclick="closeJustify(event)">
+  <div class="jmodal">
+    <div class="jmodal-header">
+      <div>
+        <div class="jmodal-title">📝 Justificar Perda de CPT</div>
+        <div class="jmodal-lt" id="jmodalLT"></div>
+      </div>
+      <button class="jmodal-close" onclick="closeJustify()">✕</button>
+    </div>
+    <textarea id="jmodalText" placeholder="Descreva o motivo da perda de CPT..."></textarea>
+    <div class="jmodal-hint">Esta justificativa será salva na Coluna Q da planilha Daily.</div>
+    <div class="jmodal-actions">
+      <button class="jbtn jbtn-cancel" onclick="closeJustify()">Cancelar</button>
+      <button class="jbtn jbtn-save" id="jmodalSave" onclick="saveJustify()">Salvar</button>
+    </div>
+  </div>
+</div>
 
 <!-- LOADING OVERLAY -->
 <div id="loadingOverlay">
@@ -202,7 +353,7 @@
 
 <!-- CHARTS ROW 1: Line (full width) -->
 <div class="sec">📈 Evolução Diária — Últimos 14 dias</div>
-<div class="charts-row" style="grid-template-columns:1fr;margin-bottom:0;">
+<div class="charts-row charts-full">
   <div class="chart-card">
     <h2 id="lineTitle">Viagens por Turno</h2>
     <div style="height:220px;"><canvas id="cLine"></canvas></div>
@@ -211,7 +362,7 @@
 
 <!-- CHARTS ROW 2: Donut + Top Destinos + Top Docas -->
 <div class="sec">📊 Análise por Turno / Status</div>
-<div class="charts-row" style="grid-template-columns:1fr 1fr 1fr;margin-bottom:0;">
+<div class="charts-row charts-thirds">
 
   <!-- Status Real Donut -->
   <div class="chart-card">
@@ -259,6 +410,7 @@
           <th>Doca</th>
           <th style="text-align:right;">Pacotes</th>
           <th>⚠️ CPT</th>
+          <th>📝 Justificativa</th>
         </tr>
       </thead>
       <tbody id="tableBody"></tbody>
@@ -459,11 +611,12 @@ function renderKPIs() {
   const total  = data ? data.total : 0;
   const perdeu = data ? data.perdeuCPT : 0;
 
-  let liberado = 0;
+  let liberado = 0, cancelado = 0;
   if (data && data.statusReal) {
     liberado = (data.statusReal['Carregado']||0)
              + (data.statusReal['Carregado/Liberado']||0)
              + (data.statusReal['Finalizado']||0);
+    cancelado = data.statusReal['Cancelado'] || 0;
   }
 
   let totalShip = 0, shipCarr = 0, cntCarr = 0;
@@ -498,6 +651,12 @@ function renderKPIs() {
       <div class="kpi-label">Carregado / Liberado</div>
       <div class="kpi-val" style="color:var(--ok)">${liberado}</div>
       <div class="kpi-sub">${total>0?Math.round(liberado/total*100):0}% · C+C/L+Finalizado</div>
+    </div>
+    <div class="kpi" style="--kc:#6b7280">
+      <div class="kpi-icon">🚫</div>
+      <div class="kpi-label">Cancelados</div>
+      <div class="kpi-val" style="color:#9ca3af">${cancelado}</div>
+      <div class="kpi-sub">${total>0?Math.round(cancelado/total*100):0}% · do total de viagens</div>
     </div>
     <div class="kpi" style="--kc:var(--danger)">
       <div class="kpi-icon">🚨</div>
@@ -665,12 +824,20 @@ function renderTable() {
 
   const body = document.getElementById('tableBody');
   if (!tableRows.length) {
-    body.innerHTML = `<tr><td colspan="12" style="text-align:center;padding:24px;color:var(--muted);">Nenhum registro encontrado</td></tr>`;
+    body.innerHTML = `<tr><td colspan="13" style="text-align:center;padding:24px;color:var(--muted);">Nenhum registro encontrado</td></tr>`;
     return;
   }
   body.innerHTML = tableRows.map((r,i) => {
     const cptClass = r.pct ? 'cpt-row' : '';
     const cptBadge = r.pct ? tag('⚠️ Atrasado','tg-red') : tag('OK','tg-ok');
+    let justCell = '<td></td>';
+    if (r.pct) {
+      if (r.just) {
+        justCell = `<td><span class="just-text" title="${r.just.replace(/"/g,'&quot;')}" onclick="openJustify(${r.rowNum},'${r.lt.replace(/'/g,"\\'")}','${r.just.replace(/'/g,"\\'")}')">${r.just}</span></td>`;
+      } else {
+        justCell = `<td><button class="just-btn" onclick="openJustify(${r.rowNum},'${r.lt.replace(/'/g,"\\'")}','')">+ Justificar</button></td>`;
+      }
+    }
     return `<tr class="${cptClass}">
       <td style="color:var(--muted);font-size:.68rem;">${i+1}</td>
       <td><code>${r.lt}</code></td>
@@ -684,11 +851,67 @@ function renderTable() {
       <td style="font-size:.75rem;color:var(--sub);">${r.doca||'—'}</td>
       <td style="text-align:right;font-family:monospace;font-size:.75rem;font-weight:600;color:${r.ship>0?'var(--text)':'var(--muted)'};">${r.ship>0?fmtNum(r.ship):'—'}</td>
       <td>${cptBadge}</td>
+      ${justCell}
     </tr>`;
   }).join('');
 }
 
 function filterTable() { renderTable(); }
+
+// ─── JUSTIFY MODAL ────────────────────────────────────
+let _justifyRowNum = null;
+
+function openJustify(rowNum, lt, existingText) {
+  _justifyRowNum = rowNum;
+  document.getElementById('jmodalLT').textContent = `LT: ${lt}  ·  Linha ${rowNum} da planilha`;
+  document.getElementById('jmodalText').value = existingText || '';
+  document.getElementById('jmodalSave').disabled = false;
+  document.getElementById('jmodalSave').textContent = 'Salvar';
+  document.getElementById('jmodalOverlay').classList.add('open');
+  setTimeout(() => document.getElementById('jmodalText').focus(), 150);
+}
+
+function closeJustify(e) {
+  if (e && e.target !== document.getElementById('jmodalOverlay')) return;
+  document.getElementById('jmodalOverlay').classList.remove('open');
+  _justifyRowNum = null;
+}
+
+async function saveJustify() {
+  const text = document.getElementById('jmodalText').value.trim();
+  const btn  = document.getElementById('jmodalSave');
+  if (!_justifyRowNum) return;
+
+  btn.disabled = true;
+  btn.textContent = 'Salvando…';
+
+  try {
+    const resp = await fetch('/api/justify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rowNum: _justifyRowNum, text }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Erro ao salvar');
+
+    // Atualiza em memória sem precisar recarregar tudo
+    const row = ALL_ROWS.find(r => r.rowNum === _justifyRowNum);
+    if (row) row.just = text;
+
+    document.getElementById('jmodalOverlay').classList.remove('open');
+    renderTable();
+
+    // Mini toast de confirmação
+    const t = document.getElementById('refreshToast');
+    t.textContent = '✅ Justificativa salva na planilha';
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 3000);
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = 'Salvar';
+    alert('Erro ao salvar: ' + e.message);
+  }
+}
 
 // ─── REGISTER DATALABELS PLUGIN ───────────────────────
 // Register globally so it's available for the donut chart

@@ -14,7 +14,7 @@ try {
 } catch (_) {}
 
 const SPREADSHEET_ID = '1Sk16vRNBUsQitL3cRUSIH86SyfQpxV9t08UW2YrSdmQ';
-const RANGE          = 'Daily!A1:P3000';
+const RANGE          = 'Daily!A1:Q3000';
 const CACHE_TTL      = 60 * 1000; // 60 seconds
 
 // ── Auth mode detection ───────────────────────────────────────────────
@@ -47,7 +47,7 @@ async function getServiceAccountToken() {
   const hdr = b64url(Buffer.from(JSON.stringify({ alg:'RS256', typ:'JWT' })));
   const pay = b64url(Buffer.from(JSON.stringify({
     iss: client_email,
-    scope: 'https://www.googleapis.com/auth/spreadsheets.readonly',
+    scope: 'https://www.googleapis.com/auth/spreadsheets',
     aud: 'https://oauth2.googleapis.com/token',
     exp: now + 3600, iat: now,
   })));
@@ -118,7 +118,7 @@ function processRawData(raw) {
   const byDate = {};
   const allRows = [];
 
-  rows.forEach(r => {
+  rows.forEach((r, i) => {
     // Date_SoC (col H, index 7) = operational date; fallback to date_cpt (col A)
     const dateSoc = (r[7] || r[0] || '').substring(0, 10);
     if (!dateSoc || dateSoc.length < 10) return;
@@ -134,18 +134,20 @@ function processRawData(raw) {
     const isCarr  = CARREGADAS.has(statusR);
 
     allRows.push({
-      d:    dateSoc,
-      lt:   r[1]  || '',
-      vt:   r[2]  || '',
-      ep:   extractTime(r[3]),
-      cp:   extractTime(r[4]),
-      cr:   extractTime(r[9]),
-      sr:   statusR,
-      dest: destino,
-      doca: doca,
-      tr:   turno,
-      ship: ship,
-      pct:  pct ? 1 : 0,
+      d:      dateSoc,
+      lt:     r[1]  || '',
+      vt:     r[2]  || '',
+      ep:     extractTime(r[3]),
+      cp:     extractTime(r[4]),
+      cr:     extractTime(r[9]),
+      sr:     statusR,
+      dest:   destino,
+      doca:   doca,
+      tr:     turno,
+      ship:   ship,
+      pct:    pct ? 1 : 0,
+      just:   r[16] || '',   // Col Q — justificativa da perda de CPT
+      rowNum: i + 2,         // Número da linha na planilha (header=1, dados a partir de 2)
     });
 
     if (!byDate[dateSoc]) byDate[dateSoc] = {};
@@ -272,12 +274,98 @@ getData((err, data) => {
   else     console.log(`[startup] Data ready — ${data.rowCount} rows across ${data.DATES.length} dates`);
 });
 
+// ── Stage-out cache (fed by Tampermonkey) ─────────────────────────────
+let stageCache = null; // { list, total, fetchedAt }
+
 // ── HTTP server ────────────────────────────────────────────────────────
 
 const server = http.createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   const urlPath = req.url.split('?')[0];
+
+  // Handle CORS preflight
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
+  // POST /api/stage-data — receives data from Tampermonkey userscript
+  if (urlPath === '/api/stage-data' && req.method === 'POST') {
+    let body = '';
+    req.on('data', d => { body += d; });
+    req.on('end', () => {
+      try {
+        stageCache = JSON.parse(body);
+        console.log(`[stage-out] Received ${stageCache.list?.length}/${stageCache.total} positions`);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid JSON' }));
+      }
+    });
+    return;
+  }
+
+  // POST /api/justify — salva justificativa de perda de CPT na col Q da planilha
+  if (urlPath === '/api/justify' && req.method === 'POST') {
+    let body = '';
+    req.on('data', d => { body += d; });
+    req.on('end', async () => {
+      try {
+        const { rowNum, text } = JSON.parse(body);
+        if (!rowNum || rowNum < 2) throw new Error('rowNum inválido');
+
+        if (!SERVICE_ACCOUNT) {
+          res.writeHead(501, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Escrita requer Service Account configurado' }));
+          return;
+        }
+
+        const token = await getServiceAccountToken();
+        const range  = `Daily!Q${rowNum}`;
+        const url    = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`;
+
+        const resp = await fetch(url, {
+          method: 'PUT',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ values: [[text]] }),
+        });
+
+        if (!resp.ok) {
+          const errText = await resp.text();
+          throw new Error(`Sheets write ${resp.status}: ${errText}`);
+        }
+
+        // Invalida cache para próxima leitura pegar a coluna Q atualizada
+        cacheFetchedAt = 0;
+
+        console.log(`[justify] Linha ${rowNum} atualizada: "${text}"`);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
+      } catch (e) {
+        console.error('[justify] Erro:', e.message);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
+  // GET /api/stage-out — serves stage-out data to dashboard
+  if (urlPath === '/api/stage-out') {
+    if (!stageCache) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'No data yet — open SPX page with Tampermonkey active' }));
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' });
+    res.end(JSON.stringify(stageCache));
+    return;
+  }
 
   if (urlPath === '/api/data') {
     getData((err, data) => {
