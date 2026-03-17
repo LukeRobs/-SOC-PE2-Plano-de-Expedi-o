@@ -4,7 +4,7 @@
 
 const crypto         = require('crypto');
 const SPREADSHEET_ID = '1Sk16vRNBUsQitL3cRUSIH86SyfQpxV9t08UW2YrSdmQ';
-const RANGE          = 'Daily!A1:P3000';
+const RANGE          = 'Daily!A1:Q3000';
 
 // ── Service Account JWT ───────────────────────────────────────────────
 let saToken = null, saTokenExp = 0;
@@ -86,7 +86,7 @@ function processRawData(raw) {
   const byDate  = {};
   const allRows = [];
 
-  rows.forEach(r => {
+  rows.forEach((r, i) => {
     // Date_SoC (col H, index 7) = operational date; fallback to date_cpt (col A)
     const dateSoc = (r[7] || r[0] || '').substring(0, 10);
     if (!dateSoc || dateSoc.length < 10) return;
@@ -105,6 +105,8 @@ function processRawData(raw) {
       d: dateSoc, lt: r[1]||'', vt: r[2]||'',
       ep: extractTime(r[3]), cp: extractTime(r[4]), cr: extractTime(r[9]),
       sr: statusR, dest: destino, doca, tr: turno, ship, pct: pct ? 1 : 0,
+      rowNum: i + 2,  // linha real na planilha (header=1, dados a partir de 2)
+      just: r[16] || '',  // Col Q — justificativa da perda de CPT
     });
 
     if (!byDate[dateSoc]) byDate[dateSoc] = {};
