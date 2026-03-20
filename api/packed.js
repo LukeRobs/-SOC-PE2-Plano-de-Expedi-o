@@ -39,7 +39,7 @@ async function getServiceAccountToken(sa) {
 }
 
 // ── Data Processing ───────────────────────────────────────────────────
-// Columns (index): 0=to_id, 1=station_name, 2=destino, 3=received_datetime,
+// Columns: 0=to_id, 1=station_name, 2=destino, 3=received_datetime,
 // 4=packed_datetime, 5=transporting_datetime, 6=estimated_cpt_datetime,
 // 7=qtd_pacotes, 8=target_process, 9=packed_day, 10=cpt_status, 11=Diff
 
@@ -54,9 +54,11 @@ function parseDiffMinutes(diff) {
 
 function diffBucket(minutes) {
   if (minutes === null) return null;
-  if (minutes < 30)  return 'menos30';
-  if (minutes <= 60) return 'd30a60';
-  return 'mais60';
+  if (minutes <= 15)  return 'd0a15';
+  if (minutes <= 30)  return 'd16a30';
+  if (minutes <= 60)  return 'd31a60';
+  if (minutes <= 120) return 'd1a2h';
+  return 'dmais2h';
 }
 
 function emptyBucket() { return { total: 0, sent: 0, notSent: 0 }; }
@@ -64,33 +66,44 @@ function emptyBucket() { return { total: 0, sent: 0, notSent: 0 }; }
 function processData(raw) {
   const rows = Array.isArray(raw.values) ? raw.values.slice(1) : [];
 
-  const byDay     = {};
-  const buckets   = { menos30: emptyBucket(), d30a60: emptyBucket(), mais60: emptyBucket() };
+  const byDay   = {};
+  const buckets = {
+    d0a15:   emptyBucket(),
+    d16a30:  emptyBucket(),
+    d31a60:  emptyBucket(),
+    d1a2h:   emptyBucket(),
+    dmais2h: emptyBucket(),
+  };
   let totalSent = 0, totalNotSent = 0;
-  let totalOnTime = 0, totalOutTime = 0, totalCptNA = 0;
+  let totalCptNA = 0, totalQtdPacotes = 0;
 
   rows.forEach(r => {
     const packedDay = (r[9] || '').substring(0, 10);
     if (!packedDay || packedDay.length < 10) return;
 
-    const sent    = !!(r[5] && r[5].trim() !== '');
-    const status  = r[10] || '';
-    const diffMin = parseDiffMinutes(r[11]);
-    const bucket  = diffBucket(diffMin);
+    const sent       = !!(r[5] && r[5].trim() !== '');
+    const status     = r[10] || '';
+    const diffMin    = parseDiffMinutes(r[11]);
+    const bucket     = diffBucket(diffMin);
+    const qtdPacotes = parseInt(r[7]) || 0;
 
     if (!byDay[packedDay]) byDay[packedDay] = {
       total: 0, sent: 0, notSent: 0,
-      onTime: 0, outTime: 0, cptNA: 0,
-      menos30: emptyBucket(), d30a60: emptyBucket(), mais60: emptyBucket(),
+      cptNA: 0, qtdPacotes: 0,
+      d0a15:   emptyBucket(),
+      d16a30:  emptyBucket(),
+      d31a60:  emptyBucket(),
+      d1a2h:   emptyBucket(),
+      dmais2h: emptyBucket(),
     };
 
     const d = byDay[packedDay];
     d.total++;
-    if (sent) { d.sent++; totalSent++; } else { d.notSent++; totalNotSent++; }
+    d.qtdPacotes += qtdPacotes;
+    totalQtdPacotes += qtdPacotes;
 
-    if (status === 'ON_TIME')           { d.onTime++;  totalOnTime++;  }
-    else if (status === 'OUT_TIME')     { d.outTime++; totalOutTime++; }
-    else if (status === 'CPT_NOT_AVAILABLE') { d.cptNA++;  totalCptNA++;  }
+    if (sent) { d.sent++; totalSent++; } else { d.notSent++; totalNotSent++; }
+    if (status === 'CPT_NOT_AVAILABLE') { d.cptNA++; totalCptNA++; }
 
     if (bucket) {
       d[bucket].total++;
@@ -103,7 +116,7 @@ function processData(raw) {
   const total = totalSent + totalNotSent;
   return {
     total, totalSent, totalNotSent,
-    totalOnTime, totalOutTime, totalCptNA,
+    totalCptNA, totalQtdPacotes,
     buckets, byDay,
     days: Object.keys(byDay).sort(),
     generatedAt: Date.now(),

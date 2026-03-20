@@ -17,6 +17,7 @@
     --green:   #10B981;
     --red:     #EF4444;
     --purple:  #8B5CF6;
+    --teal:    #06B6D4;
     --text:    #E2E8F0;
     --muted:   #94A3B8;
   }
@@ -60,17 +61,8 @@
   .panel { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:18px; }
   .panel-title { font-size:13px; font-weight:600; color:var(--text); margin-bottom:16px; display:flex; align-items:center; gap:8px; }
 
-  /* INSIGHT */
-  .insight-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; margin-bottom:24px; }
-  .insight-card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px 16px; display:flex; gap:12px; align-items:flex-start; transition:border-color 200ms; }
-  .insight-card:hover { border-color:var(--blue); }
-  .insight-icon { width:36px; height:36px; border-radius:8px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
-  .insight-icon svg { width:18px; height:18px; }
-  .insight-text strong { display:block; font-size:13px; font-weight:600; color:#fff; margin-bottom:3px; }
-  .insight-text span   { font-size:12px; color:var(--muted); line-height:1.5; }
-
   /* BUCKET */
-  .bucket-row { display:flex; flex-direction:column; gap:14px; }
+  .bucket-row { display:flex; flex-direction:column; gap:16px; }
   .bucket-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:5px; }
   .bucket-label  { font-size:13px; font-weight:600; color:var(--text); }
   .bucket-numbers { display:flex; gap:12px; font-family:'Fira Code',monospace; font-size:12px; }
@@ -96,9 +88,12 @@
 
   /* PILL */
   .pill { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:20px; font-size:11px; font-weight:600; font-family:'Fira Code',monospace; }
-  .pill-green { background:rgba(16,185,129,0.15); color:var(--green); border:1px solid rgba(16,185,129,0.3); }
-  .pill-red   { background:rgba(239,68,68,0.15);  color:var(--red);   border:1px solid rgba(239,68,68,0.3); }
-  .pill-amber { background:rgba(245,158,11,0.15); color:var(--amber); border:1px solid rgba(245,158,11,0.3); }
+  .pill-green  { background:rgba(16,185,129,0.15);  color:var(--green);  border:1px solid rgba(16,185,129,0.3); }
+  .pill-red    { background:rgba(239,68,68,0.15);   color:var(--red);    border:1px solid rgba(239,68,68,0.3); }
+  .pill-amber  { background:rgba(245,158,11,0.15);  color:var(--amber);  border:1px solid rgba(245,158,11,0.3); }
+  .pill-blue   { background:rgba(59,130,246,0.15);  color:var(--blue);   border:1px solid rgba(59,130,246,0.3); }
+  .pill-teal   { background:rgba(6,182,212,0.15);   color:var(--teal);   border:1px solid rgba(6,182,212,0.3); }
+  .pill-purple { background:rgba(139,92,246,0.15);  color:var(--purple); border:1px solid rgba(139,92,246,0.3); }
 
   /* BAR CHART */
   .bar-chart { display:flex; align-items:flex-end; gap:10px; height:80px; margin-top:10px; }
@@ -108,7 +103,7 @@
   .bar-col .lbl { font-size:10px; color:var(--muted); font-family:'Fira Code',monospace; }
 
   /* LEGEND */
-  .legend { display:flex; gap:16px; margin-top:18px; padding-top:14px; border-top:1px solid var(--border); }
+  .legend { display:flex; gap:16px; flex-wrap:wrap; margin-top:18px; padding-top:14px; border-top:1px solid var(--border); }
   .legend-item { display:flex; align-items:center; gap:6px; font-size:11px; color:var(--muted); }
   .legend-dot  { display:inline-block; width:10px; height:10px; border-radius:2px; }
 
@@ -117,6 +112,13 @@
 
   svg { fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
   #app { display:none; }
+
+  /* Diff não enviadas destaque */
+  .ns-badge { display:inline-flex; align-items:center; justify-content:center;
+    min-width:28px; padding:1px 6px; border-radius:4px; font-size:11px;
+    font-family:'Fira Code',monospace; font-weight:700; }
+  .ns-zero  { background:rgba(16,185,129,0.1); color:var(--green); }
+  .ns-some  { background:rgba(239,68,68,0.15); color:var(--red); }
 </style>
 </head>
 <body>
@@ -147,7 +149,7 @@
     </div>
   </div>
 
-  <!-- KPI CARDS -->
+  <!-- KPI CARDS: Total | Enviadas | Não Enviadas | Qtd Pacotes | CPT Indisponível -->
   <div class="kpi-grid">
     <div class="kpi-card" style="--accent:var(--blue)">
       <div class="kpi-label">Total de TOs</div>
@@ -164,15 +166,10 @@
       <div class="kpi-value" id="kpi-notsent">—</div>
       <div class="kpi-sub"><b id="kpi-notsent-pct" style="color:var(--red)">—</b> sem envio registrado</div>
     </div>
-    <div class="kpi-card" style="--accent:var(--amber)">
-      <div class="kpi-label">ON_TIME</div>
-      <div class="kpi-value" id="kpi-ontime">—</div>
-      <div class="kpi-sub"><b id="kpi-ontime-pct" style="color:var(--amber)">—</b> dentro do CPT</div>
-    </div>
-    <div class="kpi-card" style="--accent:var(--red)">
-      <div class="kpi-label">OUT_TIME</div>
-      <div class="kpi-value" id="kpi-outtime">—</div>
-      <div class="kpi-sub"><b id="kpi-outtime-pct" style="color:var(--red)">—</b> atrasadas</div>
+    <div class="kpi-card" style="--accent:var(--teal)">
+      <div class="kpi-label">Qtd Pacotes</div>
+      <div class="kpi-value" id="kpi-pacotes">—</div>
+      <div class="kpi-sub">Σ pacotes no período</div>
     </div>
     <div class="kpi-card" style="--accent:var(--purple)">
       <div class="kpi-label">CPT Indisponível</div>
@@ -181,13 +178,10 @@
     </div>
   </div>
 
-  <!-- INSIGHTS -->
-  <p class="section-title">Principais Insights</p>
-  <div class="insight-grid" id="insight-grid"></div>
-
-  <!-- BUCKETS + STATUS -->
+  <!-- ANÁLISE POR DIFF + TO ENVIADA VS NÃO ENVIADA -->
   <div class="two-col">
 
+    <!-- Análise por Diff -->
     <div class="panel">
       <div class="panel-title">
         <svg viewBox="0 0 24 24" style="width:16px;height:16px;color:var(--blue)"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
@@ -195,57 +189,48 @@
       </div>
       <div class="bucket-row" id="bucket-rows"></div>
       <div class="legend">
-        <div class="legend-item"><span class="legend-dot" style="background:var(--green)"></span>Enviadas (salvas)</div>
+        <div class="legend-item"><span class="legend-dot" style="background:var(--green)"></span>Enviadas</div>
         <div class="legend-item"><span class="legend-dot" style="background:var(--red)"></span>Não enviadas</div>
-        <div class="legend-item"><span class="legend-dot" style="background:var(--amber)"></span>30min–1h</div>
       </div>
     </div>
 
+    <!-- TO Enviada vs Não Enviada por Diff -->
     <div class="panel">
       <div class="panel-title">
-        <svg viewBox="0 0 24 24" style="width:16px;height:16px;color:var(--amber)"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-        Status do CPT Estimado
+        <svg viewBox="0 0 24 24" style="width:16px;height:16px;color:var(--blue)"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+        TO Enviada vs Não Enviada por Diff
       </div>
-      <div id="status-bars"></div>
-
-      <div style="margin-top:22px;padding-top:16px;border-top:1px solid var(--border)">
-        <div class="panel-title" style="margin-bottom:12px;">
-          <svg viewBox="0 0 24 24" style="width:16px;height:16px;color:var(--blue)"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-          TO Enviada vs Não Enviada por Diff
-        </div>
-        <table id="diff-table">
-          <thead>
-            <tr>
-              <th>Bucket Diff</th>
-              <th class="right">Total</th>
-              <th class="right">Enviadas</th>
-              <th class="right">Não Env.</th>
-              <th class="right">Taxa</th>
-            </tr>
-          </thead>
-          <tbody id="diff-tbody"></tbody>
-        </table>
-      </div>
+      <table id="diff-table">
+        <thead>
+          <tr>
+            <th>Bucket Diff</th>
+            <th class="right">Total</th>
+            <th class="right">Enviadas</th>
+            <th class="right">Não Env.</th>
+            <th class="right">Taxa</th>
+          </tr>
+        </thead>
+        <tbody id="diff-tbody"></tbody>
+      </table>
     </div>
 
   </div>
 
-  <!-- POR DIA -->
+  <!-- VOLUME POR PACKED DAY -->
   <p class="section-title">Volume por Packed Day</p>
   <div class="panel" style="margin-bottom:24px">
     <table>
       <thead>
         <tr>
           <th>Packed Day</th>
-          <th class="right">Total</th>
+          <th class="right">Total TOs</th>
           <th class="right">Enviadas</th>
           <th class="right">Não Env.</th>
-          <th class="right">ON_TIME</th>
-          <th class="right">OUT_TIME</th>
           <th class="right">CPT N/A</th>
-          <th class="right">&lt;30min</th>
-          <th class="right">30–60min</th>
-          <th class="right">&gt;1h</th>
+          <th class="right" title="Não enviadas com Diff 0–15min">NE 0–15</th>
+          <th class="right" title="Não enviadas com Diff 16–30min">NE 16–30</th>
+          <th class="right" title="Não enviadas com Diff 31min–1h">NE 31–1h</th>
+          <th class="right" title="Não enviadas com Diff 1h–2h">NE 1–2h</th>
           <th>Taxa Envio</th>
         </tr>
       </thead>
@@ -261,8 +246,9 @@
   <div class="footer">
     SoC_PE · Jaboatão dos Guararapes &nbsp;|&nbsp;
     Fonte: Planilha Base (via Google Sheets API) &nbsp;|&nbsp;
-    <strong style="color:var(--blue)">transporting_datetime</strong> = TO enviada (salva) &nbsp;|&nbsp;
-    <strong style="color:var(--amber)">Diff</strong> = packed_datetime → estimated_cpt_datetime
+    <strong style="color:var(--green)">transporting_datetime</strong> = TO enviada (salva) &nbsp;|&nbsp;
+    <strong style="color:var(--amber)">Diff</strong> = packed_datetime → estimated_cpt_datetime &nbsp;|&nbsp;
+    Colunas NE = Não Enviadas por faixa de Diff
   </div>
 
 </div><!-- #app -->
@@ -271,29 +257,34 @@
 const fmt = n => n.toLocaleString('pt-BR');
 const pct = (a, b) => b > 0 ? (a / b * 100).toFixed(2).replace('.', ',') + '%' : '0%';
 
+// Bucket config
+const BUCKETS = [
+  { key:'d0a15',   label:'0 – 15 min',   sub:'Packed muito próximo ao CPT',       pillCls:'pill-red',    color:'var(--red)'    },
+  { key:'d16a30',  label:'16 – 30 min',  sub:'Janela crítica antes do CPT',        pillCls:'pill-amber',  color:'var(--amber)'  },
+  { key:'d31a60',  label:'31 min – 1h',  sub:'Janela intermediária antes do CPT',  pillCls:'pill-blue',   color:'var(--blue)'   },
+  { key:'d1a2h',   label:'1h – 2h',      sub:'Boa antecedência ao CPT',            pillCls:'pill-teal',   color:'var(--teal)'   },
+  { key:'dmais2h', label:'Mais de 2h',   sub:'Packed com grande antecedência',     pillCls:'pill-purple', color:'var(--purple)' },
+];
+
 async function loadData() {
-  try {
-    const res = await fetch('/api/packed?t=' + Date.now());
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-      throw new Error(err.error || `HTTP ${res.status}`);
-    }
-    return await res.json();
-  } catch (e) {
-    throw e;
+  const res = await fetch('/api/packed?t=' + Date.now());
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+    throw new Error(err.error || `HTTP ${res.status}`);
   }
+  return await res.json();
 }
 
-function renderBucketRow(label, sublabel, data, color) {
+function renderBucketRow(cfg, data, grandTotal) {
   const { total, sent, notSent } = data;
-  const sentPct  = total > 0 ? (sent / total * 100) : 0;
-  const nsPct    = total > 0 ? (notSent / total * 100) : 0;
+  const sentPct = total > 0 ? (sent  / total * 100) : 0;
+  const nsPct   = total > 0 ? (notSent / total * 100) : 0;
   return `
     <div class="bucket-item">
       <div class="bucket-header">
         <div>
-          <div class="bucket-label">${label}</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:2px">${sublabel}</div>
+          <div class="bucket-label">${cfg.label}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">${cfg.sub}</div>
         </div>
         <div class="bucket-numbers">
           <span class="bn-total">${fmt(total)} TOs</span>
@@ -302,30 +293,26 @@ function renderBucketRow(label, sublabel, data, color) {
         </div>
       </div>
       <div class="bucket-bar-track">
-        <div class="bucket-seg" style="width:${sentPct}%;background:${color};opacity:0.8"></div>
-        <div class="bucket-seg" style="width:${nsPct}%;background:var(--red)"></div>
+        <div class="bucket-seg" style="width:${sentPct.toFixed(1)}%;background:var(--green);opacity:0.8"></div>
+        <div class="bucket-seg" style="width:${nsPct.toFixed(1)}%;background:var(--red)"></div>
       </div>
       <div style="display:flex;justify-content:space-between;margin-top:4px;font-size:11px;color:var(--muted)">
-        <span>${pct(total, /* injected globally */ window._grandTotal)} do total</span>
+        <span>${pct(total, grandTotal)} do total</span>
         <span style="color:${notSent > 0 ? 'var(--red)' : 'var(--green)'};font-weight:600">
-          Taxa envio: ${pct(sent, total)}${notSent > 0 ? ' → ' + fmt(notSent) + ' não enviadas' : ''}
+          Taxa envio: ${pct(sent, total)}${notSent > 0 ? ' · ' + fmt(notSent) + ' não enviadas' : ''}
         </span>
       </div>
     </div>`;
 }
 
-function taxaColor(r) {
-  const p = r.total > 0 ? r.sent / r.total : 0;
-  if (p >= 0.99) return 'var(--green)';
-  if (p >= 0.90) return 'var(--amber)';
-  return 'var(--red)';
+function nsBadge(n) {
+  return `<span class="ns-badge ${n === 0 ? 'ns-zero' : 'ns-some'}">${fmt(n)}</span>`;
 }
 
 function render(d) {
-  window._grandTotal = d.total;
+  const days = d.days;
 
   // Header sub
-  const days = d.days;
   if (days.length) {
     const d1 = days[0].substring(5).split('-').reverse().join('/');
     const d2 = days[days.length-1].substring(5).split('-').reverse().join('/');
@@ -336,129 +323,60 @@ function render(d) {
   // Badge + updated
   document.getElementById('badge-total').textContent = fmt(d.total);
   const dt = new Date(d.generatedAt);
-  document.getElementById('updated-at').textContent =
-    'Atualizado: ' + dt.toLocaleTimeString('pt-BR');
+  document.getElementById('updated-at').textContent = 'Atualizado: ' + dt.toLocaleTimeString('pt-BR');
 
   // KPIs
-  document.getElementById('kpi-total').textContent     = fmt(d.total);
-  document.getElementById('kpi-period').textContent    = `${days[0]?.slice(5,10).split('-').reverse().join('/')} → ${days[days.length-1]?.slice(5,10).split('-').reverse().join('/')}/2026`;
-  document.getElementById('kpi-sent').textContent      = fmt(d.totalSent);
-  document.getElementById('kpi-sent-pct').textContent  = pct(d.totalSent, d.total);
-  document.getElementById('kpi-notsent').textContent   = fmt(d.totalNotSent);
+  document.getElementById('kpi-total').textContent       = fmt(d.total);
+  document.getElementById('kpi-period').textContent      =
+    `${days[0]?.slice(5,10).split('-').reverse().join('/')} → ${days[days.length-1]?.slice(5,10).split('-').reverse().join('/')}/2026`;
+  document.getElementById('kpi-sent').textContent        = fmt(d.totalSent);
+  document.getElementById('kpi-sent-pct').textContent    = pct(d.totalSent, d.total);
+  document.getElementById('kpi-notsent').textContent     = fmt(d.totalNotSent);
   document.getElementById('kpi-notsent-pct').textContent = pct(d.totalNotSent, d.total);
-  document.getElementById('kpi-ontime').textContent    = fmt(d.totalOnTime);
-  document.getElementById('kpi-ontime-pct').textContent= pct(d.totalOnTime, d.total);
-  document.getElementById('kpi-outtime').textContent   = fmt(d.totalOutTime);
-  document.getElementById('kpi-outtime-pct').textContent= pct(d.totalOutTime, d.total);
-  document.getElementById('kpi-cptna').textContent     = fmt(d.totalCptNA);
-  document.getElementById('kpi-cptna-pct').textContent = pct(d.totalCptNA, d.total);
-
-  // Insights (dynamic)
-  const b = d.buckets;
-  const allSafeWhenClose = b.menos30.notSent === 0 && b.d30a60.notSent === 0;
-  const bigDay = days.reduce((acc, day) => d.byDay[day].total > (d.byDay[acc]?.total || 0) ? day : acc, days[0]);
-  const bigDayFmt = bigDay ? bigDay.slice(5,10).split('-').reverse().join('/') : '—';
-  const bigDayPct = bigDay ? pct(d.byDay[bigDay].total, d.total) : '—';
-
-  document.getElementById('insight-grid').innerHTML = `
-    <div class="insight-card">
-      <div class="insight-icon" style="background:rgba(239,68,68,0.1);color:var(--red)">
-        <svg viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
-      </div>
-      <div class="insight-text">
-        <strong>100% das não enviadas têm Diff &gt; 1h</strong>
-        <span>Nenhuma TO com Diff &lt; 1h ficou sem envio. O risco está concentrado nas TOs com antecedência alta de packed.</span>
-      </div>
-    </div>
-    <div class="insight-card">
-      <div class="insight-icon" style="background:rgba(16,185,129,0.1);color:var(--green)">
-        <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
-      </div>
-      <div class="insight-text">
-        <strong>Diff &lt; 1h: ${allSafeWhenClose ? '100% enviadas' : 'monitorar'}</strong>
-        <span>${fmt(b.menos30.total + b.d30a60.total)} TOs com Diff &lt; 1h — ${allSafeWhenClose ? 'todas salvas. Sistema funciona bem no limite.' : b.menos30.notSent + b.d30a60.notSent + ' não enviadas nessa faixa.'}</span>
-      </div>
-    </div>
-    <div class="insight-card">
-      <div class="insight-icon" style="background:rgba(245,158,11,0.1);color:var(--amber)">
-        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
-      </div>
-      <div class="insight-text">
-        <strong>${bigDayFmt} concentra ${bigDayPct} das TOs</strong>
-        <span>${bigDay ? fmt(d.byDay[bigDay].total) : '—'} de ${fmt(d.total)} TOs. ${bigDay && d.byDay[bigDay].notSent > 0 ? d.byDay[bigDay].notSent + ' não enviadas nesse dia.' : 'Maior pico do período.'}</span>
-      </div>
-    </div>
-    <div class="insight-card">
-      <div class="insight-icon" style="background:rgba(139,92,246,0.1);color:var(--purple)">
-        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-      </div>
-      <div class="insight-text">
-        <strong>Diff &gt; 1h: ${fmt(b.mais60.notSent)} não enviadas</strong>
-        <span>${fmt(b.mais60.total)} TOs com antecedência alta. Taxa de envio: ${pct(b.mais60.sent, b.mais60.total)}. Toda perda está nessa faixa.</span>
-      </div>
-    </div>`;
+  document.getElementById('kpi-pacotes').textContent     = fmt(d.totalQtdPacotes);
+  document.getElementById('kpi-cptna').textContent       = fmt(d.totalCptNA);
+  document.getElementById('kpi-cptna-pct').textContent   = pct(d.totalCptNA, d.total);
 
   // Bucket rows
+  const b = d.buckets;
   document.getElementById('bucket-rows').innerHTML =
-    renderBucketRow('Diff &lt; 30 minutos', 'Packed muito próximo ao CPT estimado', b.menos30, 'var(--green)') +
-    renderBucketRow('Diff 30 min – 1 hora', 'Janela intermediária antes do CPT',    b.d30a60, 'var(--amber)') +
-    renderBucketRow('Diff &gt; 1 hora',     'Packed com grande antecedência ao CPT', b.mais60, 'var(--green)');
+    BUCKETS.map(cfg => renderBucketRow(cfg, b[cfg.key], d.total)).join('');
 
-  // Status bars
-  const statuses = [
-    { label:'ON_TIME',            val:d.totalOnTime,  color:'var(--green)', pctV:pct(d.totalOnTime,d.total) },
-    { label:'CPT_NOT_AVAILABLE',  val:d.totalCptNA,   color:'var(--purple)',pctV:pct(d.totalCptNA,d.total)  },
-    { label:'OUT_TIME',           val:d.totalOutTime, color:'var(--red)',   pctV:pct(d.totalOutTime,d.total) },
-  ];
-  document.getElementById('status-bars').innerHTML = statuses.map(s => `
-    <div style="margin-bottom:14px">
-      <div style="display:flex;justify-content:space-between;margin-bottom:6px">
-        <span style="font-size:13px;font-weight:600;color:#fff">${s.label}</span>
-        <span style="font-family:'Fira Code',monospace;font-size:13px;color:${s.color};font-weight:600">${fmt(s.val)} · ${s.pctV}</span>
-      </div>
-      <div class="bar-track" style="height:10px;background:rgba(255,255,255,0.06)">
-        <div class="bar-fill" style="width:${s.pctV};background:${s.color};min-width:${s.val>0?'4px':'0'}"></div>
-      </div>
-    </div>`).join('');
-
-  // Diff summary table
-  const diffRows = [
-    { label:'&lt; 30min', pill:'pill-green', data: b.menos30 },
-    { label:'30min – 1h', pill:'pill-amber', data: b.d30a60  },
-    { label:'&gt; 1 hora', pill:'pill-red', data: b.mais60   },
-  ];
-  document.getElementById('diff-tbody').innerHTML = diffRows.map(r => {
-    const taxaP = pct(r.data.sent, r.data.total);
-    const taxaCls = r.data.notSent > 0 ? 'pill-amber' : 'pill-green';
+  // Diff table
+  document.getElementById('diff-tbody').innerHTML = BUCKETS.map(cfg => {
+    const r = b[cfg.key];
+    const taxaP   = pct(r.sent, r.total);
+    const taxaCls = r.notSent > 0 ? 'pill-red' : 'pill-green';
     return `<tr>
-      <td><span class="pill ${r.pill}">${r.label}</span></td>
-      <td class="td-right mono">${fmt(r.data.total)}</td>
-      <td class="td-right mono" style="color:var(--green)">${fmt(r.data.sent)}</td>
-      <td class="td-right mono" style="color:${r.data.notSent>0?'var(--red)':'var(--muted)'}">${fmt(r.data.notSent)}</td>
+      <td><span class="pill ${cfg.pillCls}">${cfg.label}</span></td>
+      <td class="td-right mono">${fmt(r.total)}</td>
+      <td class="td-right mono" style="color:var(--green)">${fmt(r.sent)}</td>
+      <td class="td-right mono" style="color:${r.notSent > 0 ? 'var(--red)' : 'var(--muted)'}">${fmt(r.notSent)}</td>
       <td class="td-right"><span class="pill ${taxaCls}">${taxaP}</span></td>
     </tr>`;
   }).join('');
 
-  // Day table
+  // Day table — diff columns = NOT SENT por bucket
   const maxVol = Math.max(...days.map(day => d.byDay[day].total), 1);
   document.getElementById('day-tbody').innerHTML = days.map(day => {
     const dd  = d.byDay[day];
     const lbl = day.slice(5,10).split('-').reverse().join('/');
     const isToday = day === new Date().toISOString().substring(0,10);
-    const tRate = pct(dd.sent, dd.total);
+    const tRate   = pct(dd.sent, dd.total);
     const rateNum = dd.total > 0 ? dd.sent / dd.total : 0;
     const barColor = rateNum >= 0.99 ? 'var(--green)' : rateNum >= 0.90 ? 'var(--amber)' : 'var(--red)';
     return `<tr>
-      <td class="mono" style="color:#fff;font-weight:600">${lbl}/2026${isToday?' <span style="font-size:10px;color:var(--amber)">●em aberto</span>':''}</td>
+      <td class="mono" style="color:#fff;font-weight:600">
+        ${lbl}/2026${isToday ? ' <span style="font-size:10px;color:var(--amber)">●em aberto</span>' : ''}
+      </td>
       <td class="td-right mono">${fmt(dd.total)}</td>
       <td class="td-right mono" style="color:var(--green)">${fmt(dd.sent)}</td>
-      <td class="td-right mono" style="color:${dd.notSent>0?'var(--red)':'var(--muted)'}">${fmt(dd.notSent)}</td>
-      <td class="td-right mono" style="color:var(--green)">${fmt(dd.onTime)}</td>
-      <td class="td-right mono" style="color:${dd.outTime>0?'var(--red)':'var(--muted)'}">${fmt(dd.outTime)}</td>
-      <td class="td-right mono" style="color:${dd.cptNA>0?'var(--purple)':'var(--muted)'}">${fmt(dd.cptNA)}</td>
-      <td class="td-right mono">${fmt(dd.menos30.total)}</td>
-      <td class="td-right mono">${fmt(dd.d30a60.total)}</td>
-      <td class="td-right mono">${fmt(dd.mais60.total)}</td>
+      <td class="td-right mono" style="color:${dd.notSent > 0 ? 'var(--red)' : 'var(--muted)'}">${fmt(dd.notSent)}</td>
+      <td class="td-right mono" style="color:${dd.cptNA > 0 ? 'var(--purple)' : 'var(--muted)'}">${fmt(dd.cptNA)}</td>
+      <td class="td-right">${nsBadge(dd.d0a15.notSent)}</td>
+      <td class="td-right">${nsBadge(dd.d16a30.notSent)}</td>
+      <td class="td-right">${nsBadge(dd.d31a60.notSent)}</td>
+      <td class="td-right">${nsBadge(dd.d1a2h.notSent)}</td>
       <td>
         <div class="bar-wrap">
           <div class="bar-track"><div class="bar-fill" style="width:${tRate};background:${barColor}"></div></div>
@@ -470,17 +388,17 @@ function render(d) {
 
   // Bar chart
   document.getElementById('bar-chart').innerHTML = days.map(day => {
-    const dd   = d.byDay[day];
-    const h    = Math.max((dd.total / maxVol) * 80, 3);
-    const lbl  = day.slice(5,10).split('-').reverse().join('/').substring(0,5);
+    const dd  = d.byDay[day];
+    const h   = Math.max((dd.total / maxVol) * 80, 3);
+    const lbl = day.slice(5,10).split('-').reverse().join('/').substring(0,5);
     const isToday = day === new Date().toISOString().substring(0,10);
-    const bg   = isToday
+    const bg  = isToday
       ? 'background:rgba(245,158,11,0.4);border:1px dashed var(--amber);border-bottom:none'
       : 'background:linear-gradient(180deg,var(--blue),rgba(30,64,175,0.5))';
     return `<div class="bar-col">
-      <div class="val" style="color:${isToday?'var(--amber)':'var(--muted)'}">${fmt(dd.total)}</div>
+      <div class="val" style="color:${isToday ? 'var(--amber)' : 'var(--muted)'}">${fmt(dd.total)}</div>
       <div class="bar" style="${bg};height:${h}px"></div>
-      <div class="lbl" style="color:${isToday?'var(--amber)':'var(--muted)'}">${lbl}</div>
+      <div class="lbl" style="color:${isToday ? 'var(--amber)' : 'var(--muted)'}">${lbl}</div>
     </div>`;
   }).join('');
 }
