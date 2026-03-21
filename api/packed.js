@@ -41,19 +41,10 @@ async function getServiceAccountToken(sa) {
 // ── Data Processing ───────────────────────────────────────────────────
 // Columns: 0=to_id, 1=station_name, 2=destino, 3=received_datetime,
 // 4=packed_datetime, 5=transporting_datetime, 6=estimated_cpt_datetime,
-// 7=qtd_pacotes, 8=target_process, 9=packed_day, 10=cpt_status, 11=Diff
-
-function parseDiffMinutes(diff) {
-  if (!diff || !diff.trim()) return null;
-  const parts = diff.trim().split(':');
-  if (parts.length === 3) {
-    return parseInt(parts[0]) * 60 + parseInt(parts[1]) + parseInt(parts[2]) / 60;
-  }
-  return null;
-}
+// 7=qtd_pacotes, 8=target_process, 9=minutos_ate_cpt, 10=packed_day, 11=cpt_status
 
 function diffBucket(minutes) {
-  if (minutes === null) return null;
+  if (minutes === null || isNaN(minutes) || minutes < 0) return null;
   if (minutes <= 15)  return 'd0a15';
   if (minutes <= 30)  return 'd16a30';
   if (minutes <= 60)  return 'd31a60';
@@ -78,12 +69,12 @@ function processData(raw) {
   let totalCptNA = 0, totalQtdPacotes = 0;
 
   rows.forEach(r => {
-    const packedDay = (r[9] || '').substring(0, 10);
+    const packedDay = (r[10] || '').substring(0, 10);
     if (!packedDay || packedDay.length < 10) return;
 
     const sent       = !!(r[5] && r[5].trim() !== '');
-    const status     = r[10] || '';
-    const diffMin    = parseDiffMinutes(r[11]);
+    const status     = r[11] || '';
+    const diffMin    = r[9] !== undefined && r[9] !== '' ? parseFloat(r[9]) : null;
     const bucket     = diffBucket(diffMin);
     const qtdPacotes = parseInt(r[7]) || 0;
 
