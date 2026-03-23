@@ -253,40 +253,24 @@
     </div>
   </div>
 
-  <!-- ANÁLISE POR DIFF + TABELA ENVIADA vs NÃO ENVIADA -->
-  <div class="two-col">
-
-    <div class="panel">
-      <div class="panel-title">
-        <svg viewBox="0 0 24 24" style="width:16px;height:16px;color:var(--blue)"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-        Análise por Diff (antecedência do packed)
-      </div>
-      <div class="bucket-row" id="bucket-rows"></div>
-      <div class="legend">
-        <div class="legend-item"><span class="legend-dot" style="background:var(--green)"></span>Enviadas</div>
-        <div class="legend-item"><span class="legend-dot" style="background:var(--red)"></span>Não enviadas</div>
-      </div>
+  <!-- TABELA ENVIADA vs NÃO ENVIADA -->
+  <div class="panel" style="margin-bottom:24px">
+    <div class="panel-title">
+      <svg viewBox="0 0 24 24" style="width:16px;height:16px;color:var(--blue)"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+      TO Enviada vs Não Enviadas por Range de Tempo
     </div>
-
-    <div class="panel">
-      <div class="panel-title">
-        <svg viewBox="0 0 24 24" style="width:16px;height:16px;color:var(--blue)"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-        TO Enviada vs Não Enviada por Diff
-      </div>
-      <table>
-        <thead>
-          <tr>
-            <th>Bucket Diff</th>
-            <th class="right">Total</th>
-            <th class="right">Enviadas</th>
-            <th class="right">Não Env.</th>
-            <th class="right">Taxa</th>
-          </tr>
-        </thead>
-        <tbody id="diff-tbody"></tbody>
-      </table>
-    </div>
-
+    <table>
+      <thead>
+        <tr>
+          <th>Range Tempo</th>
+          <th class="right">Total</th>
+          <th class="right">Enviadas</th>
+          <th class="right">Não Env.</th>
+          <th class="right">Taxa</th>
+        </tr>
+      </thead>
+      <tbody id="diff-tbody"></tbody>
+    </table>
   </div>
 
   <!-- VOLUME POR PACKED DAY -->
@@ -314,18 +298,6 @@
     <div id="empty-chart" class="empty-state" style="display:none">
       Nenhum dado no período selecionado
     </div>
-    <div id="chart-wrap" style="padding-top:16px;border-top:1px solid var(--border);margin-top:20px;">
-      <div class="bar-chart" id="bar-chart"></div>
-    </div>
-  </div>
-
-  <!-- FOOTER -->
-  <div class="footer">
-    SoC_PE · Jaboatão dos Guararapes &nbsp;|&nbsp;
-    Fonte: Planilha Base (via Google Sheets API) &nbsp;|&nbsp;
-    <strong style="color:var(--green)">transporting_datetime</strong> = TO enviada &nbsp;|&nbsp;
-    <strong style="color:var(--amber)">minutos_ate_cpt</strong> = minutos entre packed e CPT estimado &nbsp;|&nbsp;
-    Colunas NE = Não enviadas por faixa de tempo
   </div>
 
 </div><!-- #app -->
@@ -486,12 +458,6 @@ function render(d) {
 
   // Empty states
   document.getElementById('empty-chart').style.display = empty ? 'block' : 'none';
-  document.getElementById('chart-wrap').style.display  = empty ? 'none'  : 'block';
-
-  // Bucket rows
-  document.getElementById('bucket-rows').innerHTML = empty
-    ? '<div class="empty-state">Nenhum dado no período</div>'
-    : BUCKETS.map(cfg => renderBucketRow(cfg, d.buckets[cfg.key], d.total)).join('');
 
   // Diff table
   document.getElementById('diff-tbody').innerHTML = empty
@@ -538,21 +504,6 @@ function render(d) {
         </tr>`;
       }).join('');
 
-  // Bar chart
-  document.getElementById('bar-chart').innerHTML = days.map(day => {
-    const dd  = d.byDay[day];
-    const h   = Math.max((dd.total / maxVol) * 72, 3);
-    const lbl = day.slice(5,10).split('-').reverse().join('/').substring(0,5);
-    const isToday = day === today;
-    const bg = isToday
-      ? 'background:rgba(245,158,11,0.4);border:1px dashed var(--amber);border-bottom:none'
-      : 'background:linear-gradient(180deg,var(--blue),rgba(30,64,175,0.5))';
-    return `<div class="bar-col">
-      <div class="val" style="color:${isToday?'var(--amber)':'var(--muted)'}">${fmt(dd.total)}</div>
-      <div class="bar" style="${bg};height:${h}px"></div>
-      <div class="lbl" style="color:${isToday?'var(--amber)':'var(--muted)'}">${lbl}</div>
-    </div>`;
-  }).join('');
 }
 
 function renderFiltered() { render(filterAndAggregate(_raw)); }
