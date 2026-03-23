@@ -210,10 +210,10 @@
 
     <div class="filter-presets">
       <button class="filter-btn" data-preset="today" onclick="applyPreset(this)">Hoje</button>
-      <button class="filter-btn active" data-preset="7d" onclick="applyPreset(this)">7 Dias</button>
+      <button class="filter-btn" data-preset="7d" onclick="applyPreset(this)">7 Dias</button>
       <button class="filter-btn" data-preset="15d" onclick="applyPreset(this)">15 Dias</button>
       <button class="filter-btn" data-preset="30d" onclick="applyPreset(this)">30 Dias</button>
-      <button class="filter-btn" data-preset="all" onclick="applyPreset(this)">Todos</button>
+      <button class="filter-btn active" data-preset="all" onclick="applyPreset(this)">Todos</button>
     </div>
 
     <div class="filter-sep"></div>
@@ -347,7 +347,7 @@ const BUCKETS = [
 let _raw      = null;
 let _fromDate = null;
 let _toDate   = null;
-let _preset   = '7d';
+let _preset   = 'all';
 
 // ── Filtros ───────────────────────────────────────────────────────────
 function applyPreset(btn) {
@@ -389,7 +389,7 @@ function applyCustomRange() {
 
 // ── Agrega dados filtrados ────────────────────────────────────────────
 function filterAndAggregate(raw) {
-  let days = raw.days.slice();
+  let days = raw.days.slice().reverse();
   if (_fromDate) days = days.filter(d => d >= _fromDate);
   if (_toDate)   days = days.filter(d => d <= _toDate);
 
@@ -571,12 +571,8 @@ async function init() {
   try {
     _raw = await loadData();
 
-    // Padrão: 7 dias
-    const today = isoDay(new Date());
-    const from7 = new Date(); from7.setDate(from7.getDate() - 6);
-    _fromDate = isoDay(from7); _toDate = today;
-    document.getElementById('date-from').value = _fromDate;
-    document.getElementById('date-to').value   = _toDate;
+    // Padrão: Todos os dados
+    _fromDate = null; _toDate = null;
 
     document.getElementById('loading-state').style.display = 'none';
     document.getElementById('app').style.display = 'block';
