@@ -426,6 +426,9 @@ let BY_DATE = {};
 let ALL_ROWS = [];
 let lastGeneratedAt = 0;
 
+// Justificativas salvas localmente — persiste entre polls enquanto Sheets não confirma
+const _justOverrides = {}; // rowNum → text
+
 // ─── STATE ────────────────────────────────────────────
 function getTodayStr() {
   const n = new Date();
@@ -482,6 +485,10 @@ function applyData(data) {
   BY_DATE  = data.BY_DATE;
   ALL_ROWS = data.ALL_ROWS;
   lastGeneratedAt = data.generatedAt;
+  // Aplica overrides locais: preserva justificativas salvas enquanto cache do Vercel não expira
+  ALL_ROWS.forEach(r => {
+    if (_justOverrides[r.rowNum] !== undefined) r.just = _justOverrides[r.rowNum];
+  });
 }
 
 async function loadInitial() {
@@ -894,7 +901,8 @@ async function saveJustify() {
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || 'Erro ao salvar');
 
-    // Atualiza em memória sem precisar recarregar tudo
+    // Salva override local — persiste mesmo quando poll substitui ALL_ROWS com cache antigo
+    _justOverrides[_justifyRowNum] = text;
     const row = ALL_ROWS.find(r => r.rowNum === _justifyRowNum);
     if (row) row.just = text;
 
