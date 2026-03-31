@@ -427,7 +427,7 @@ let ALL_ROWS = [];
 let lastGeneratedAt = 0;
 
 // Justificativas salvas localmente — persiste entre polls enquanto Sheets não confirma
-const _justOverrides = {}; // rowNum → text
+const _justOverrides = {}; // lt → text (chave primária)
 
 // ─── STATE ────────────────────────────────────────────
 function getTodayStr() {
@@ -487,7 +487,7 @@ function applyData(data) {
   lastGeneratedAt = data.generatedAt;
   // Aplica overrides locais: preserva justificativas salvas enquanto cache do Vercel não expira
   ALL_ROWS.forEach(r => {
-    if (_justOverrides[r.rowNum] !== undefined) r.just = _justOverrides[r.rowNum];
+    if (_justOverrides[r.lt] !== undefined) r.just = _justOverrides[r.lt];
   });
 }
 
@@ -840,9 +840,9 @@ function renderTable() {
     let justCell = '<td></td>';
     if (r.pct) {
       if (r.just) {
-        justCell = `<td><span class="just-text" title="${r.just.replace(/"/g,'&quot;')}" onclick="openJustify(${r.rowNum},'${r.lt.replace(/'/g,"\\'")}','${r.just.replace(/'/g,"\\'")}')">${r.just}</span></td>`;
+        justCell = `<td><span class="just-text" title="${r.just.replace(/"/g,'&quot;')}" onclick="openJustify('${r.lt.replace(/'/g,"\\'")}','${r.just.replace(/'/g,"\\'")}')">${r.just}</span></td>`;
       } else {
-        justCell = `<td><button class="just-btn" onclick="openJustify(${r.rowNum},'${r.lt.replace(/'/g,"\\'")}','')">+ Justificar</button></td>`;
+        justCell = `<td><button class="just-btn" onclick="openJustify('${r.lt.replace(/'/g,"\\'")}','')">+ Justificar</button></td>`;
       }
     }
     return `<tr class="${cptClass}">
@@ -866,11 +866,11 @@ function renderTable() {
 function filterTable() { renderTable(); }
 
 // ─── JUSTIFY MODAL ────────────────────────────────────
-let _justifyRowNum = null;
+let _justifyLT = null;  // LT = chave primária (col B)
 
-function openJustify(rowNum, lt, existingText) {
-  _justifyRowNum = rowNum;
-  document.getElementById('jmodalLT').textContent = `LT: ${lt}  ·  Linha ${rowNum} da planilha`;
+function openJustify(lt, existingText) {
+  _justifyLT = lt;
+  document.getElementById('jmodalLT').textContent = `LT: ${lt}`;
   document.getElementById('jmodalText').value = existingText || '';
   document.getElementById('jmodalSave').disabled = false;
   document.getElementById('jmodalSave').textContent = 'Salvar';
@@ -881,13 +881,13 @@ function openJustify(rowNum, lt, existingText) {
 function closeJustify(e) {
   if (e && e.target !== document.getElementById('jmodalOverlay')) return;
   document.getElementById('jmodalOverlay').classList.remove('open');
-  _justifyRowNum = null;
+  _justifyLT = null;
 }
 
 async function saveJustify() {
   const text = document.getElementById('jmodalText').value.trim();
   const btn  = document.getElementById('jmodalSave');
-  if (!_justifyRowNum) return;
+  if (!_justifyLT) return;
 
   btn.disabled = true;
   btn.textContent = 'Salvando…';
@@ -896,14 +896,14 @@ async function saveJustify() {
     const resp = await fetch('/api/justify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rowNum: _justifyRowNum, text }),
+      body: JSON.stringify({ lt: _justifyLT, text }),
     });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || 'Erro ao salvar');
 
-    // Salva override local — persiste mesmo quando poll substitui ALL_ROWS com cache antigo
-    _justOverrides[_justifyRowNum] = text;
-    const row = ALL_ROWS.find(r => r.rowNum === _justifyRowNum);
+    // Atualiza em memória + override local (persiste durante o poll de 60s)
+    _justOverrides[_justifyLT] = text;
+    const row = ALL_ROWS.find(r => r.lt === _justifyLT);
     if (row) row.just = text;
 
     document.getElementById('jmodalOverlay').classList.remove('open');

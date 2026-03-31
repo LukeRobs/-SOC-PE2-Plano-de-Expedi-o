@@ -310,14 +310,14 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // POST /api/justify — salva justificativa de perda de CPT na col Q da planilha
+  // POST /api/justify — busca linha pela LT (col B = chave primária) e salva na col Q
   if (urlPath === '/api/justify' && req.method === 'POST') {
     let body = '';
     req.on('data', d => { body += d; });
     req.on('end', async () => {
       try {
-        const { rowNum, text } = JSON.parse(body);
-        if (!rowNum || rowNum < 2) throw new Error('rowNum inválido');
+        const { lt, text } = JSON.parse(body);
+        if (!lt) throw new Error('LT não informado');
 
         if (!SERVICE_ACCOUNT) {
           res.writeHead(501, { 'Content-Type': 'application/json' });
@@ -326,8 +326,23 @@ const server = http.createServer((req, res) => {
         }
 
         const token = await getServiceAccountToken();
-        const range  = `Daily!Q${rowNum}`;
-        const url    = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`;
+
+        // 1. Busca col B inteira para encontrar a linha correta pela LT
+        const lookupUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent('Daily!B:B')}`;
+        const lookupResp = await fetch(lookupUrl, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (!lookupResp.ok) throw new Error(`Lookup error: ${lookupResp.status}`);
+        const lookupData = await lookupResp.json();
+        const colB = lookupData.values || [];
+
+        const rowIndex = colB.findIndex((row, i) => i > 0 && row[0] === lt);
+        if (rowIndex === -1) throw new Error(`LT "${lt}" não encontrada na planilha`);
+        const rowNum = rowIndex + 1; // 1-based
+
+        // 2. Escreve na col Q da linha encontrada
+        const range = `Daily!Q${rowNum}`;
+        const url   = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`;
 
         const resp = await fetch(url, {
           method: 'PUT',
@@ -343,9 +358,9 @@ const server = http.createServer((req, res) => {
         // Invalida cache para próxima leitura pegar a coluna Q atualizada
         cacheFetchedAt = 0;
 
-        console.log(`[justify] Linha ${rowNum} atualizada: "${text}"`);
+        console.log(`[justify] LT="${lt}" → Linha ${rowNum} → Q="${text}"`);
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: true }));
+        res.end(JSON.stringify({ ok: true, rowNum }));
       } catch (e) {
         console.error('[justify] Erro:', e.message);
         res.writeHead(500, { 'Content-Type': 'application/json' });
