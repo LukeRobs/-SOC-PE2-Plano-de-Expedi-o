@@ -1,6 +1,9 @@
 {
   "rewrites": [
-    { "source": "/", "destination": "/dashboard.html" }
+    { "source": "/", "destination": "/expedicao/index.html" },
+    { "source": "/expedicao", "destination": "/expedicao/index.html" },
+    { "source": "/stage-out", "destination": "/stage-out/index.html" },
+    { "source": "/golden-hour", "destination": "/golden-hour/index.html" }
   ],
   "headers": [
     {

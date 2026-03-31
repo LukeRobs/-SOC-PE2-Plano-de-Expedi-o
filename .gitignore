@@ -4,23 +4,42 @@
 *credentials*.json
 *-key.json
 
-# Generated data files (large, rebuilt from spreadsheet)
+# Generated data files (rebuilt from spreadsheet)
 /data.js
 /data_daily.js
+daily_3k.json
 
 # Raw cache files
 *.json
 !package.json
+!package-lock.json
 !vercel.json
 
 # Node
 node_modules/
 
-# Logs / local scripts
+# Logs / local artifacts
 server.log
+server.err
 server.err
 start.bat
 *.log
+
+# Arquivos raiz antigos (substituídos pelas pastas)
+/dashboard.html
+/stage_out.html
+/packed_ontime_analise.html
+/dashboard_soc.html
+
+# Arquivos de outros projetos
+*.jsx
+*.pptx
+*.csv
+*.png
+/slide_previews/
+/Code_soc.gs
+/folgas_simulacao.js
+/create_folgas_presentation.js
 
 # Claude internal
 .claude/
