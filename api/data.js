@@ -72,37 +72,6 @@ function parseShipments(s) {
   return Math.round(parseFloat(s.trim().replace(/\./g, '').replace(',', '.')) || 0);
 }
 
-// Deriva a data operacional (Date_SoC) a partir do cpt_plan e vehicle_type,
-// usando a mesma lógica da fórmula de turno real da planilha.
-// T3 madrugada (cpt antes do início do T1) pertence ao dia anterior.
-function deriveDateSoc(vehicleType, cptPlanRaw) {
-  const norm = normalizeStr(cptPlanRaw);
-  if (!norm) return null;
-
-  const dt  = new Date(norm);
-  const h   = dt.getHours();
-  const m   = dt.getMinutes();
-  const vt  = (vehicleType || '').toUpperCase();
-
-  // Janela de madrugada do T3 (antes do início do T1)
-  // CARRETA: T1 começa às 4:30 → madrugada T3 = 00:00–04:29
-  // TRUCK:   T1 começa às 5:00 → madrugada T3 = 00:00–04:59
-  let isEarlyT3 = false;
-  if (vt.includes('CARRETA')) {
-    isEarlyT3 = h < 4 || (h === 4 && m < 30);
-  } else if (vt.includes('TRUCK')) {
-    isEarlyT3 = h < 5;
-  }
-
-  if (isEarlyT3) {
-    const prev = new Date(dt);
-    prev.setDate(prev.getDate() - 1);
-    return `${prev.getFullYear()}-${String(prev.getMonth()+1).padStart(2,'0')}-${String(prev.getDate()).padStart(2,'0')}`;
-  }
-
-  return norm.substring(0, 10);
-}
-
 // Pacotes_Real (col P, index 15): use if filled; fallback to Shipments (col M, index 12)
 function getShipments(r) {
   const real = r[15];
@@ -118,9 +87,8 @@ function processRawData(raw) {
   const allRows = [];
 
   rows.forEach((r, i) => {
-    // Deriva Date_SoC a partir do cpt_plan + vehicle_type (mesma lógica do turno real).
-    // T3 madrugada pertence ao dia anterior; fallback para col H, depois col A.
-    const dateSoc = deriveDateSoc(r[2], r[4]) || (r[7] || r[0] || '').substring(0, 10);
+    // Date_SoC (col H, index 7) = operational date; fallback to date_cpt (col A)
+    const dateSoc = (r[7] || r[0] || '').substring(0, 10);
     if (!dateSoc || dateSoc.length < 10) return;
 
     const turno   = r[13] || '';
