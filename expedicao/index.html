@@ -1165,10 +1165,11 @@ const PER_TRUCK  = 3;
 const CAPACITY   = Math.floor(LABOR / PER_TRUCK); // 6
 
 // Horas válidas por turno (filtra outliers do dado fonte)
+// Limites levemente mais largos para absorver variações de TRUCK vs CARRETA
 const TURNO_HOURS = {
-  'T1':  h => h >= 4  && h <= 13,
-  'T2':  h => h >= 14 && h <= 21,
-  'T3':  h => h >= 21 || h <= 4,
+  'T1':  h => h >= 4  && h <= 14,
+  'T2':  h => h >= 14 && h <= 22,
+  'T3':  h => h >= 21 || h <= 5,
   'ALL': () => true,
 };
 
