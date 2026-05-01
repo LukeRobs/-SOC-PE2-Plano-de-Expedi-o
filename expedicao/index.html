@@ -667,6 +667,14 @@
   </div>
 </div>
 
+<!-- CHART: Concentração CPT -->
+<div class="charts-row charts-full" style="margin-top:var(--space-3);">
+  <div class="chart-card">
+    <h2 id="concTitle">Concentração de Veículos por Horário — CPT Plan</h2>
+    <div style="height:180px;"><canvas id="cConc"></canvas></div>
+  </div>
+</div>
+
 <!-- TABLE -->
 <div class="sec" style="margin-top:8px;">
   <div class="sec-icon">
@@ -720,6 +728,7 @@ function toggleTheme() {
   localStorage.setItem('theme', theme);
   if (_chartLine)  rebuildLineChart();
   if (_chartDonut) rebuildDonutChart();
+  if (_chartConc)  rebuildConcChart();
 }
 (function() {
   const saved = localStorage.getItem('theme');
@@ -919,7 +928,7 @@ function applyFilter() {
 }
 
 // ─── RENDER ───────────────────────────────────────────
-let _chartLine, _chartDonut;
+let _chartLine, _chartDonut, _chartConc;
 
 function render() {
   document.getElementById('filterSummary').textContent = `${fmtDate(selDate)} · Turno ${selTurno}`;
@@ -927,6 +936,7 @@ function render() {
   rebuildLineChart();
   rebuildDonutChart();
   renderTops();
+  rebuildConcChart();
   renderTable();
 }
 
@@ -1130,6 +1140,58 @@ function renderTops() {
     if (r.doca) docaAgg[r.doca] = (docaAgg[r.doca]||0)+1;
   });
   renderTopBars('topDocas', docaAgg, true);
+}
+
+// ── CONCENTRAÇÃO CPT PLAN ──
+function rebuildConcChart() {
+  const buckets = {};
+  ALL_ROWS.forEach(r => {
+    if (r.d !== selDate) return;
+    if (selTurno !== 'ALL' && r.tr !== selTurno) return;
+    if (!r.cp) return;
+    const hour = r.cp.substring(0, 2);
+    buckets[hour] = (buckets[hour] || 0) + 1;
+  });
+
+  // Ordena horas: T3 madrugada (00–04) vai depois de 23
+  const toKey = h => { const n = parseInt(h); return n < 5 ? n + 24 : n; };
+  const sorted = Object.entries(buckets).sort((a, b) => toKey(a[0]) - toKey(b[0]));
+
+  document.getElementById('concTitle').textContent =
+    `Concentração de Veículos por Horário — CPT Plan · ${fmtDate(selDate)} · ${selTurno}`;
+
+  const tc     = getThemeColors();
+  const labels = sorted.map(([h]) => `${h}:00`);
+  const values = sorted.map(([, v]) => v);
+  const peak   = Math.max(...values, 1);
+
+  const colors = values.map(v =>
+    v === peak               ? '#ef4444' :
+    v >= Math.ceil(peak * .7) ? '#f97316' :
+                                '#3b82f6'
+  );
+
+  if (_chartConc) _chartConc.destroy();
+  _chartConc = new Chart(document.getElementById('cConc'), {
+    type: 'bar',
+    data: { labels, datasets: [{ data: values, backgroundColor: colors, borderRadius: 5, borderSkipped: false }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        datalabels: {
+          anchor: 'end', align: 'top',
+          color: tc.label,
+          font: { size: 10, weight: '700', family: "'Inter',sans-serif" },
+          formatter: v => v > 0 ? v : null,
+        }
+      },
+      scales: {
+        x: { ticks: { color: tc.label, font: { size: 10 } }, grid: { display: false } },
+        y: { ticks: { color: tc.label, font: { size: 10 }, stepSize: 1 }, grid: { color: tc.grid }, beginAtZero: true }
+      }
+    }
+  });
 }
 
 // ── TABLE ──
