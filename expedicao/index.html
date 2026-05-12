@@ -393,6 +393,43 @@
     .cpt-row td { background:rgba(239,68,68,.04); }
     .cpt-row:hover td { background:rgba(239,68,68,.08); }
 
+    /* ─── CPT PLAN ALERT STATES ─────────────────────────── */
+    @keyframes cpt-pulse {
+      0%, 100% { opacity:1; }
+      50%       { opacity:.3; }
+    }
+
+    /* Row-level urgency tints — use !important to override zebra/hover */
+    tr[data-cpt-urgency="warn"]     td { background:rgba(245,158,11,.06) !important; }
+    tr[data-cpt-urgency="critical"] td { background:rgba(239,68,68,.08)  !important; }
+    tr[data-cpt-urgency="expired"]  td { background:rgba(239,68,68,.11)  !important; }
+    tr[data-cpt-urgency="critical"]:hover td { background:rgba(239,68,68,.14) !important; }
+    tr[data-cpt-urgency="expired"]:hover  td { background:rgba(239,68,68,.16) !important; }
+
+    /* Left-border accent on critical/expired */
+    tr[data-cpt-urgency="critical"] td:first-child,
+    tr[data-cpt-urgency="expired"]  td:first-child {
+      box-shadow:inset 3px 0 0 var(--danger);
+    }
+
+    /* CPT time text urgency */
+    .cpt-cell[data-urgency="warn"]     .cpt-time { color:#fbbf24 !important; }
+    .cpt-cell[data-urgency="critical"] .cpt-time {
+      color:#ef4444 !important;
+      animation:cpt-pulse 1s ease-in-out infinite;
+    }
+    .cpt-cell[data-urgency="expired"]  .cpt-time { color:#ef4444 !important; font-weight:800 !important; }
+
+    /* Inline ATRASADO badge (hidden by default) */
+    .cpt-late-badge {
+      display:none;
+      font-size:.52rem; font-weight:800; letter-spacing:.04em;
+      background:var(--danger); color:#fff;
+      padding:1px 5px; border-radius:3px; margin-left:5px;
+      vertical-align:middle;
+    }
+    .cpt-cell[data-urgency="expired"] .cpt-late-badge { display:inline; }
+
     /* Empty state */
     .empty-state { text-align:center; padding:var(--space-8) var(--space-6); color:var(--muted); }
     .empty-state svg { width:36px; height:36px; margin:0 auto var(--space-3); opacity:.3; }
@@ -1272,7 +1309,7 @@ function renderTable() {
       if (!haystack.includes(search)) return false;
     }
     return true;
-  }).sort((a,b) => (a.cp||'').localeCompare(b.cp||''));
+  }).sort((a,b) => opSortKey(a.cp) - opSortKey(b.cp));
 
   document.getElementById('tableTitle').textContent = `Viagens — ${fmtDate(selDate)} · ${selTurno}`;
   document.getElementById('rowCount').textContent    = `${tableRows.length} registros`;
@@ -1293,13 +1330,13 @@ function renderTable() {
         justCell = `<td><button class="just-btn" onclick="openJustify('${r.lt.replace(/'/g,"\\'")}','')">+ Justificar</button></td>`;
       }
     }
-    return `<tr class="${cptClass}">
+    return `<tr class="${cptClass}" data-cpt-urgency="">
       <td style="color:var(--muted);font-size:.66rem;font-variant-numeric:tabular-nums;">${i+1}</td>
       <td><code>${r.lt}</code></td>
       <td>${vtTag(r.vt)}</td>
       <td>${turnoTag(r.tr)}</td>
       <td style="color:var(--text-2);font-family:var(--font-mono);font-size:.74rem;">${r.ep||'—'}</td>
-      <td style="font-family:var(--font-mono);font-size:.74rem;font-weight:600;">${r.cp||'—'}</td>
+      <td class="cpt-cell" data-cp="${r.cp||''}" data-sr="${r.sr||''}"><span class="cpt-time" style="font-family:var(--font-mono);font-size:.74rem;font-weight:600;">${r.cp||'—'}</span><span class="cpt-late-badge">ATRASADO</span></td>
       <td style="font-family:var(--font-mono);font-size:.74rem;color:${r.pct?'var(--danger)':r.cr?'var(--ok)':'var(--muted)'};">${r.cr||'—'}</td>
       <td>${srTag(r.sr)}</td>
       <td><strong style="font-size:.74rem;">${r.dest||'—'}</strong></td>
@@ -1309,6 +1346,7 @@ function renderTable() {
       ${justCell}
     </tr>`;
   }).join('');
+  updateCptAlerts();
 }
 
 function filterTable() { renderTable(); }
@@ -1362,6 +1400,48 @@ async function saveJustify() {
     alert('Erro ao salvar: ' + e.message);
   }
 }
+
+// ─── ORDENAÇÃO OPERACIONAL ────────────────────────────
+// Horas 00-05 pertencem ao T3 (madrugada) → tratadas como 24-29
+function opSortKey(timeStr) {
+  if (!timeStr) return 9999;
+  const h = parseInt(timeStr.substring(0, 2), 10);
+  return (h < 6 ? h + 24 : h) * 60 + parseInt(timeStr.substring(3, 5) || '0', 10);
+}
+
+// ─── ALERTA TEMPO REAL CPT PLAN ───────────────────────
+const TERMINAL_STATUS = new Set(['Carregado','Carregado/Liberado','Finalizado','Cancelado']);
+
+function opMinutesNow() {
+  const n = new Date();
+  const h = n.getHours(), m = n.getMinutes();
+  return (h < 6 ? h + 24 : h) * 60 + m;
+}
+
+function getCptUrgency(cpStr, sr) {
+  if (!cpStr || TERMINAL_STATUS.has(sr)) return '';
+  const h = parseInt(cpStr.substring(0, 2), 10);
+  const m = parseInt(cpStr.substring(3, 5), 10);
+  const cptMin = (h < 6 ? h + 24 : h) * 60 + m;
+  const diff = cptMin - opMinutesNow(); // positivo = tempo restante, negativo = expirado
+  if (diff < 0)   return 'expired';
+  if (diff <= 15)  return 'critical';
+  if (diff <= 30)  return 'warn';
+  return '';
+}
+
+function updateCptAlerts() {
+  document.querySelectorAll('.cpt-cell').forEach(cell => {
+    const urgency = getCptUrgency(cell.dataset.cp, cell.dataset.sr);
+    if (cell.dataset.urgency !== urgency) {
+      cell.dataset.urgency = urgency;
+      const tr = cell.closest('tr');
+      if (tr) tr.dataset.cptUrgency = urgency;
+    }
+  });
+}
+
+setInterval(updateCptAlerts, 30000);
 
 // ─── INIT ─────────────────────────────────────────────
 Chart.register(ChartDataLabels);
