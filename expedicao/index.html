@@ -1309,7 +1309,7 @@ function renderTable() {
       if (!haystack.includes(search)) return false;
     }
     return true;
-  }).sort((a,b) => opSortKey(a.cp) - opSortKey(b.cp));
+  }).sort((a,b) => opSortKey(a.cp, a.tr) - opSortKey(b.cp, b.tr));
 
   document.getElementById('tableTitle').textContent = `Viagens — ${fmtDate(selDate)} · ${selTurno}`;
   document.getElementById('rowCount').textContent    = `${tableRows.length} registros`;
@@ -1336,7 +1336,7 @@ function renderTable() {
       <td>${vtTag(r.vt)}</td>
       <td>${turnoTag(r.tr)}</td>
       <td style="color:var(--text-2);font-family:var(--font-mono);font-size:.74rem;">${r.ep||'—'}</td>
-      <td class="cpt-cell" data-cp="${r.cp||''}" data-sr="${r.sr||''}"><span class="cpt-time" style="font-family:var(--font-mono);font-size:.74rem;font-weight:600;">${r.cp||'—'}</span><span class="cpt-late-badge">ATRASADO</span></td>
+      <td class="cpt-cell" data-cp="${r.cp||''}" data-sr="${r.sr||''}" data-tr="${r.tr||''}"><span class="cpt-time" style="font-family:var(--font-mono);font-size:.74rem;font-weight:600;">${r.cp||'—'}</span><span class="cpt-late-badge">ATRASADO</span></td>
       <td style="font-family:var(--font-mono);font-size:.74rem;color:${r.pct?'var(--danger)':r.cr?'var(--ok)':'var(--muted)'};">${r.cr||'—'}</td>
       <td>${srTag(r.sr)}</td>
       <td><strong style="font-size:.74rem;">${r.dest||'—'}</strong></td>
@@ -1402,11 +1402,18 @@ async function saveJustify() {
 }
 
 // ─── ORDENAÇÃO OPERACIONAL ────────────────────────────
-// Horas 00-05 pertencem ao T3 (madrugada) → tratadas como 24-29
-function opSortKey(timeStr) {
+// T3 com CPT na parte da manhã (h < 12) é continuação da madrugada → +24h
+// Garante: 22→23→00→01→...→06 ao invés de 00→01→...→06→22→23
+function isT3Morning(turno, h) {
+  return turno === 'T3' && h < 12;
+}
+
+function opSortKey(timeStr, turno) {
   if (!timeStr) return 9999;
   const h = parseInt(timeStr.substring(0, 2), 10);
-  return (h < 6 ? h + 24 : h) * 60 + parseInt(timeStr.substring(3, 5) || '0', 10);
+  const m = parseInt(timeStr.substring(3, 5) || '0', 10);
+  const shifted = (h < 6 || isT3Morning(turno, h)) ? h + 24 : h;
+  return shifted * 60 + m;
 }
 
 // ─── ALERTA TEMPO REAL CPT PLAN ───────────────────────
@@ -1418,12 +1425,13 @@ function opMinutesNow() {
   return (h < 6 ? h + 24 : h) * 60 + m;
 }
 
-function getCptUrgency(cpStr, sr) {
+function getCptUrgency(cpStr, sr, turno) {
   if (!cpStr || TERMINAL_STATUS.has(sr)) return '';
   const h = parseInt(cpStr.substring(0, 2), 10);
   const m = parseInt(cpStr.substring(3, 5), 10);
-  const cptMin = (h < 6 ? h + 24 : h) * 60 + m;
-  const diff = cptMin - opMinutesNow(); // positivo = tempo restante, negativo = expirado
+  const shifted = (h < 6 || isT3Morning(turno, h)) ? h + 24 : h;
+  const cptMin = shifted * 60 + m;
+  const diff = cptMin - opMinutesNow();
   if (diff < 0)   return 'expired';
   if (diff <= 15)  return 'critical';
   if (diff <= 30)  return 'warn';
@@ -1432,7 +1440,7 @@ function getCptUrgency(cpStr, sr) {
 
 function updateCptAlerts() {
   document.querySelectorAll('.cpt-cell').forEach(cell => {
-    const urgency = getCptUrgency(cell.dataset.cp, cell.dataset.sr);
+    const urgency = getCptUrgency(cell.dataset.cp, cell.dataset.sr, cell.dataset.tr);
     if (cell.dataset.urgency !== urgency) {
       cell.dataset.urgency = urgency;
       const tr = cell.closest('tr');
