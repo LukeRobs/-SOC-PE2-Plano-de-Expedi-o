@@ -1,0 +1,696 @@
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  DASHBOARD STAGE OUT — AUDITORIA  |  script.html v2
+// ═══════════════════════════════════════════════════════════════
+
+// ─── Estado Global ──────────────────────────────────────────────
+var S = {
+  allRows:     [],
+  displayRows: [],
+  groups:      [],
+  pageGroups:  [],
+  headers:     [],
+  colMap:      {},
+  toColumns:   [],   // ['TO1','TO2',...,'TO20']
+  page:        1,
+  sortKey:     null,
+  sortDir:     'asc',
+  openIds:     {},   // { id: true } — evita Set para compatibilidade
+  chart:       null,
+  refreshTimer:null,
+  REFRESH_MS:  5 * 60 * 1000,
+};
+
+// ─── Colunas da tabela principal ────────────────────────────────
+var TABLE_COLS = [
+  { key: 'auditId',    label: 'ID',          w: '110px' },
+  { key: 'type',       label: 'Tipo',         w: '90px'  },
+  { key: 'qrcode',     label: 'QR / ID',      w: '110px' },
+  { key: 'sortcode',   label: 'SortCode',     w: '110px' },
+  { key: 'ocorrencia', label: 'Ocorrência',   w: '180px' },
+  { key: 'date',       label: 'Data/Hora',    w: '130px' },
+  { key: 'auditor',    label: 'Auditor',      w: '100px' },
+];
+
+// ─── Inicialização ───────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', function () {
+  loadData(false);
+  startAutoRefresh();
+});
+
+// ═══════════════════════════════════════════════════════════════
+//  CARREGAMENTO
+// ═══════════════════════════════════════════════════════════════
+function loadData(forceRefresh) {
+  showOverlay(true);
+  if (forceRefresh) {
+    google.script.run
+      .withSuccessHandler(function () { fetchData(); })
+      .withFailureHandler(function ()  { fetchData(); })
+      .invalidateCache();
+  } else {
+    fetchData();
+  }
+}
+
+function fetchData() {
+  google.script.run
+    .withSuccessHandler(onData)
+    .withFailureHandler(onError)
+    .getData(readFilters());
+}
+
+function onData(res) {
+  showOverlay(false);
+  if (!res || !res.success) {
+    showToast('Erro: ' + (res ? res.error : 'resposta inválida'), 'error');
+    renderEmpty('Não foi possível carregar os dados.');
+    return;
+  }
+  S.headers   = res.headers   || [];
+  S.colMap    = res.colMap    || {};
+  S.allRows   = res.rows      || [];
+  S.toColumns = res.toColumns || [];
+
+  fillSortcodeSelect();
+  processAndRender();
+
+  document.getElementById('lastUpdate').textContent =
+    'Atualizado: ' + new Date().toLocaleTimeString('pt-BR');
+  showToast(S.allRows.length + ' registros carregados', 'success');
+}
+
+function onError(err) {
+  showOverlay(false);
+  showToast('Falha na conexão', 'error');
+  renderEmpty('Não foi possível conectar ao servidor.');
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  PROCESSAMENTO CENTRAL
+// ═══════════════════════════════════════════════════════════════
+function processAndRender() {
+  var q = (document.getElementById('tableSearch').value || '').toLowerCase().trim();
+  S.displayRows = q
+    ? S.allRows.filter(function (r) {
+        return Object.values(r).some(function (v) {
+          return String(v).toLowerCase().indexOf(q) > -1;
+        });
+      })
+    : S.allRows;
+
+  S.groups     = groupByAudit(S.displayRows);
+  S.pageGroups = S.groups.slice();
+  if (S.sortKey) sortGroups();
+  S.page = 1;
+
+  // Badges
+  var fActive = isFilterActive();
+  document.getElementById('badgeFiltered').style.display = fActive ? 'inline-flex' : 'none';
+  document.getElementById('badgeRecords').textContent  = S.displayRows.length + ' registros';
+  document.getElementById('badgeAudits').textContent   = S.pageGroups.length  + ' auditorias';
+
+  updateKPIs();
+  renderTable();
+  renderChart();
+}
+
+// ─── Agrupamento ─────────────────────────────────────────────────
+// Cada linha é uma auditoria única (ID único).
+// Agrupamos pelo ID para suportar o accordion por auditoria.
+function groupByAudit(rows) {
+  var col   = S.colMap.auditId;
+  var map   = {};
+  var order = [];
+  rows.forEach(function (row, i) {
+    var key = col ? (row[col] || 'sem_id_' + i) : ('row_' + i);
+    if (!map[key]) { map[key] = { id: key, rows: [] }; order.push(key); }
+    map[key].rows.push(row);
+  });
+  return order.map(function (k) { return map[k]; });
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  KPIs
+// ═══════════════════════════════════════════════════════════════
+function updateKPIs() {
+  var rows = S.displayRows;
+  var cm   = S.colMap;
+
+  // 1. Auditorias únicas (cada linha = 1 auditoria)
+  var auditIds = {};
+  if (cm.auditId) rows.forEach(function (r) { if (r[cm.auditId]) auditIds[r[cm.auditId]] = 1; });
+  else            rows.forEach(function (_, i) { auditIds[i] = 1; });
+  animNum('kpiAuditorias', Object.keys(auditIds).length);
+  setText('kpiAuditoriasSub', '');
+
+  // 2. Ruas únicas (coluna Rua — pode estar vazia)
+  var ruaSet = {};
+  if (cm.rua) rows.forEach(function (r) { var v = r[cm.rua]; if (v) ruaSet[v] = 1; });
+  var ruaCount = Object.keys(ruaSet).length;
+  animNum('kpiRuas', ruaCount);
+  setText('kpiRuasSub', ruaCount === 0 && cm.rua ? 'coluna vazia na planilha' : (!cm.rua ? 'coluna Rua não detectada' : ''));
+
+  // 3. Scuttles = linhas onde CG_ou_TO === 'Scuttle'
+  var scuttleCount = 0;
+  if (cm.type) {
+    rows.forEach(function (r) {
+      if ((r[cm.type] || '').toLowerCase() === 'scuttle') scuttleCount++;
+    });
+    setText('kpiScuttlesSub', '');
+  } else {
+    setText('kpiScuttlesSub', 'col. CG_ou_TO não detectada');
+  }
+  animNum('kpiScuttles', scuttleCount);
+
+  // 4. Gaiolas = linhas onde CG_ou_TO === 'Gaiola'
+  var gaiolaCount = 0;
+  if (cm.type) {
+    rows.forEach(function (r) {
+      if ((r[cm.type] || '').toLowerCase() === 'gaiola') gaiolaCount++;
+    });
+    setText('kpiGaiolasSub', '');
+  } else {
+    setText('kpiGaiolasSub', 'col. CG_ou_TO não detectada');
+  }
+  animNum('kpiGaiolas', gaiolaCount);
+
+  // 5. SortCodes únicos
+  var scSet = {};
+  if (cm.sortcode) rows.forEach(function (r) { var v = r[cm.sortcode]; if (v) scSet[v] = 1; });
+  animNum('kpiSortcodes', Object.keys(scSet).length);
+  setText('kpiSortcodesSub', '');
+}
+
+function animNum(id, target) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  el.classList.remove('skeleton-text');
+  var from = parseInt(el.textContent.replace(/\D/g,'')) || 0;
+  var dur  = 650;
+  var t0   = performance.now();
+  (function tick(now) {
+    var p = Math.min((now - t0) / dur, 1);
+    var e = 1 - Math.pow(1 - p, 3);
+    el.textContent = Math.round(from + (target - from) * e).toLocaleString('pt-BR');
+    if (p < 1) requestAnimationFrame(tick);
+  })(t0);
+}
+
+function setText(id, txt) {
+  var el = document.getElementById(id);
+  if (el) el.textContent = txt;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  TABELA
+// ═══════════════════════════════════════════════════════════════
+function renderTable() {
+  document.getElementById('tableSkeleton').style.display = 'none';
+  var cont    = document.getElementById('tableContainer');
+  var perPage = parseInt(document.getElementById('perPage').value) || 10;
+  var total   = S.pageGroups.length;
+  var totalPgs= Math.max(1, Math.ceil(total / perPage));
+  if (S.page > totalPgs) S.page = totalPgs;
+
+  var slice = S.pageGroups.slice((S.page - 1) * perPage, S.page * perPage);
+
+  if (total === 0) {
+    renderEmpty('Nenhum registro encontrado para os filtros aplicados.');
+    renderPagination(0, 1, 1);
+    return;
+  }
+
+  // Colunas visíveis: apenas as que foram detectadas
+  var visCols = TABLE_COLS.filter(function (c) { return !!S.colMap[c.key]; });
+  if (visCols.length === 0) {
+    // Fallback dinâmico com os primeiros headers
+    visCols = S.headers.slice(0, 8).map(function (h) {
+      return { key: h, label: h, dynamic: true };
+    });
+  }
+
+  var html = '<table class="data-table"><thead><tr>';
+  html += '<th style="width:34px"></th>';
+  visCols.forEach(function (c) {
+    var cls = S.sortKey === c.key
+      ? ' class="' + (S.sortDir === 'asc' ? 'sort-asc' : 'sort-desc') + '"'
+      : '';
+    html += '<th' + cls + ' onclick="sortBy(\'' + esc(c.key) + '\')"' +
+            (c.w ? ' style="width:' + c.w + '"' : '') + '>' + esc(c.label) + '</th>';
+  });
+  // Coluna extra: nº de TOs da auditoria
+  if (S.toColumns.length > 0) {
+    html += '<th style="width:70px;text-align:center">Nº TOs</th>';
+  }
+  html += '</tr></thead><tbody>';
+
+  slice.forEach(function (group) {
+    var id     = group.id;
+    var row    = group.rows[0];
+    var isOpen = !!S.openIds[id];
+    var rowCls = 'main-row' + (isOpen ? ' is-open' : '');
+
+    // Conta TOs não-vazias
+    var toCount = 0;
+    S.toColumns.forEach(function (col) { if (row[col]) toCount++; });
+
+    html += '<tr class="' + rowCls + '" onclick="toggleRow(\'' + esc(id) + '\')">';
+    html += '<td style="text-align:center"><span class="toggle-btn">▶</span></td>';
+
+    visCols.forEach(function (col) {
+      var realCol = col.dynamic ? col.key : S.colMap[col.key];
+      var val     = realCol ? (row[realCol] || '') : '';
+
+      if (col.key === 'auditId') {
+        html += '<td><div class="cell-flex"><span class="id-chip">' + esc(String(val)) + '</span></div></td>';
+      } else if (col.key === 'type') {
+        html += '<td>' + typeBadge(val) + '</td>';
+      } else if (col.key === 'date') {
+        html += '<td>' + fmtDatetime(val) + '</td>';
+      } else if (col.key === 'ocorrencia') {
+        html += '<td title="' + esc(String(val)) + '" style="max-width:180px;overflow:hidden;text-overflow:ellipsis">' + esc(String(val)) + '</td>';
+      } else {
+        html += '<td title="' + esc(String(val)) + '">' + esc(String(val)) + '</td>';
+      }
+    });
+
+    if (S.toColumns.length > 0) {
+      var badgeCls = toCount > 0 ? 'badge-purple' : 'badge-neutral';
+      html += '<td style="text-align:center"><span class="badge ' + badgeCls + '">' + toCount + '</span></td>';
+    }
+
+    html += '</tr>';
+
+    // Linha accordion
+    html += '<tr class="acc-row' + (isOpen ? ' open' : '') + '" id="acc-' + esc(id) + '">';
+    html += '<td colspan="' + (visCols.length + 1 + (S.toColumns.length > 0 ? 1 : 0)) + '">';
+    html += buildAccordion(group);
+    html += '</td></tr>';
+  });
+
+  html += '</tbody></table>';
+  cont.innerHTML = html;
+  renderPagination(total, S.page, totalPgs);
+}
+
+// ─── Conteúdo do Accordion ───────────────────────────────────────
+function buildAccordion(group) {
+  var row = group.rows[0];
+  var cm  = S.colMap;
+  var id  = group.id;
+
+  // Extrai TOs não-vazias
+  var toList = [];
+  S.toColumns.forEach(function (col) {
+    var v = (row[col] || '').trim();
+    if (v) toList.push(v);
+  });
+
+  var html = '<div class="acc-inner">';
+
+  // Cabeçalho
+  html += '<div class="acc-head">';
+  html += 'Auditoria <strong class="acc-id">' + esc(id) + '</strong>';
+  if (S.toColumns.length > 0) {
+    html += ' <span class="badge ' + (toList.length > 0 ? 'badge-purple' : 'badge-neutral') + '">' +
+            toList.length + ' TO(s)</span>';
+  }
+  html += '</div>';
+
+  // Grid de detalhes da auditoria
+  html += '<div class="acc-detail-grid">';
+
+  if (cm.type && row[cm.type]) {
+    html += accField('Tipo', typeBadge(row[cm.type]));
+  }
+  if (cm.qrcode && row[cm.qrcode]) {
+    html += accField('QR / ID', '<span class="id-chip id-chip-cyan">' + esc(row[cm.qrcode]) + '</span>');
+  }
+  if (cm.sortcode && row[cm.sortcode]) {
+    html += accField('SortCode', '<span class="badge badge-info">' + esc(row[cm.sortcode]) + '</span>');
+  }
+  if (cm.rua && row[cm.rua]) {
+    html += accField('Rua', esc(row[cm.rua]));
+  }
+  if (cm.date && row[cm.date]) {
+    html += accField('Data/Hora', fmtDatetime(row[cm.date]));
+  }
+  if (cm.auditor && row[cm.auditor]) {
+    html += accField('Auditor', esc(row[cm.auditor]));
+  }
+  if (cm.ocorrencia && row[cm.ocorrencia]) {
+    html += accField('Ocorrência', esc(row[cm.ocorrencia]), true);
+  }
+  if (cm.obs && row[cm.obs]) {
+    html += accField('Observação', esc(row[cm.obs]), true);
+  }
+
+  html += '</div>';
+
+  // Seção de TOs
+  html += '<div class="acc-to-section">';
+  if (toList.length === 0) {
+    html += '<p class="acc-no-to">Nenhuma Transfer Order registrada nesta auditoria.</p>';
+  } else {
+    html += '<div class="acc-to-header">Transfer Orders (' + toList.length + ')</div>';
+    html += '<div class="acc-to-grid">';
+    toList.forEach(function (to, i) {
+      html += '<div class="acc-to-item">' +
+              '<span class="acc-to-num">' + (i + 1) + '</span>' +
+              '<span class="to-code">' + esc(to) + '</span>' +
+              '</div>';
+    });
+    html += '</div>';
+  }
+  html += '</div>';
+
+  html += '</div>';
+  return html;
+}
+
+function accField(label, valueHtml, wide) {
+  return '<div class="acc-field' + (wide ? ' acc-field-wide' : '') + '">' +
+         '<span class="acc-field-lbl">' + label + '</span>' +
+         '<span class="acc-field-val">' + valueHtml + '</span>' +
+         '</div>';
+}
+
+function renderEmpty(msg) {
+  document.getElementById('tableContainer').innerHTML =
+    '<div class="empty-state">' +
+    '<div class="empty-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>' +
+    '<h3>Sem resultados</h3><p>' + msg + '</p></div>';
+}
+
+// ─── Toggle ──────────────────────────────────────────────────────
+function toggleRow(id) {
+  if (S.openIds[id]) delete S.openIds[id];
+  else S.openIds[id] = true;
+  renderTable();
+}
+
+// ─── Sort ────────────────────────────────────────────────────────
+function sortBy(key) {
+  S.sortDir = (S.sortKey === key && S.sortDir === 'asc') ? 'desc' : 'asc';
+  S.sortKey = key;
+  sortGroups();
+  S.page = 1;
+  renderTable();
+}
+
+function sortGroups() {
+  var key    = S.sortKey;
+  var dir    = S.sortDir;
+  var realCol = S.colMap[key] || key;
+  S.pageGroups = S.groups.slice().sort(function (a, b) {
+    var va = a.rows[0][realCol] || '';
+    var vb = b.rows[0][realCol] || '';
+    var n  = String(va).localeCompare(String(vb), 'pt-BR', { numeric: true });
+    return dir === 'asc' ? n : -n;
+  });
+}
+
+// ─── Paginação ───────────────────────────────────────────────────
+function renderPagination(total, cur, totalPgs) {
+  var perPage = parseInt(document.getElementById('perPage').value) || 10;
+  var start   = (cur - 1) * perPage + 1;
+  var end     = Math.min(cur * perPage, total);
+  document.getElementById('pagInfo').textContent =
+    total > 0 ? 'Mostrando ' + start + '–' + end + ' de ' + total + ' auditorias' : '0 auditorias';
+
+  var ctrl = document.getElementById('pagControls');
+  if (totalPgs <= 1) { ctrl.innerHTML = ''; return; }
+
+  var range = pageRange(cur, totalPgs);
+  var html  = '<button class="pg-btn" onclick="goPage(' + (cur-1) + ')" ' + (cur===1?'disabled':'') + '>‹</button>';
+  range.forEach(function (p) {
+    if (p === '…') html += '<span class="pg-btn" style="cursor:default">…</span>';
+    else html += '<button class="pg-btn' + (p===cur?' active':'') + '" onclick="goPage(' + p + ')">' + p + '</button>';
+  });
+  html += '<button class="pg-btn" onclick="goPage(' + (cur+1) + ')" ' + (cur===totalPgs?'disabled':'') + '>›</button>';
+  ctrl.innerHTML = html;
+}
+
+function pageRange(cur, total) {
+  if (total <= 7) return Array.from({ length: total }, function (_, i) { return i + 1; });
+  var r = [1];
+  if (cur > 3) r.push('…');
+  for (var i = Math.max(2, cur-1); i <= Math.min(total-1, cur+1); i++) r.push(i);
+  if (cur < total - 2) r.push('…');
+  r.push(total);
+  return r;
+}
+
+function goPage(p) {
+  var perPage  = parseInt(document.getElementById('perPage').value) || 10;
+  var totalPgs = Math.ceil(S.pageGroups.length / perPage);
+  S.page = Math.max(1, Math.min(p, totalPgs));
+  renderTable();
+  document.querySelector('.table-panel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  GRÁFICO — TOP 10 SORTCODES
+// ═══════════════════════════════════════════════════════════════
+function renderChart() {
+  var cm   = S.colMap;
+  var rows = S.displayRows;
+
+  if (!cm.sortcode) {
+    document.getElementById('chartSub').textContent = 'Coluna SortCode não detectada';
+    document.getElementById('rankingWrap').innerHTML =
+      '<p style="color:var(--txt-2);font-size:.76rem;text-align:center;padding:12px">—</p>';
+    return;
+  }
+
+  var cnt = {};
+  rows.forEach(function (r) {
+    var sc = String(r[cm.sortcode] || '').trim();
+    if (sc) cnt[sc] = (cnt[sc] || 0) + 1;
+  });
+
+  var sorted = Object.entries(cnt)
+    .sort(function (a, b) { return b[1] - a[1]; })
+    .slice(0, 10);
+
+  var labels = sorted.map(function (x) { return x[0]; });
+  var values = sorted.map(function (x) { return x[1]; });
+  var maxVal = values[0] || 1;
+
+  if (S.chart) { S.chart.destroy(); S.chart = null; }
+
+  S.chart = new Chart(document.getElementById('sortcodeChart'), {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Auditorias',
+        data: values,
+        backgroundColor: labels.map(function (_, i) {
+          return 'rgba(124,58,237,' + (0.95 - i * 0.07).toFixed(2) + ')';
+        }),
+        borderColor: 'rgba(167,139,250,.6)',
+        borderWidth: 1,
+        borderRadius: 5,
+        borderSkipped: false,
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 600, easing: 'easeOutQuart' },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1c2128',
+          borderColor: 'rgba(48,54,61,.9)',
+          borderWidth: 1,
+          titleColor: '#e6edf3',
+          bodyColor: '#8b949e',
+          padding: 10,
+          callbacks: {
+            label: function (ctx) { return '  ' + ctx.parsed.x + ' auditoria(s)'; }
+          }
+        }
+      },
+      scales: {
+        x: { grid: { color: 'rgba(48,54,61,.4)' }, ticks: { color: '#8b949e', font: { size: 11 } }, border: { color: 'transparent' } },
+        y: { grid: { display: false }, ticks: { color: '#e6edf3', font: { size: 11 } }, border: { color: 'transparent' } }
+      }
+    }
+  });
+
+  var wrap = document.getElementById('rankingWrap');
+  if (!sorted.length) { wrap.innerHTML = '<p style="color:var(--txt-2);font-size:.76rem;text-align:center;padding:12px">Sem dados</p>'; return; }
+
+  wrap.innerHTML = sorted.map(function (item, i) {
+    var pct    = Math.round((item[1] / maxVal) * 100);
+    var posCls = i === 0 ? ' gold' : i === 1 ? ' silver' : i === 2 ? ' bronze' : '';
+    return '<div class="rank-item">' +
+      '<div class="rank-pos' + posCls + '">' + (i+1) + '</div>' +
+      '<div class="rank-name" title="' + esc(item[0]) + '">' + esc(item[0]) + '</div>' +
+      '<div class="rank-bar-bg"><div class="rank-bar" style="width:' + pct + '%"></div></div>' +
+      '<div class="rank-count">' + item[1] + '</div>' +
+      '</div>';
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  FILTROS
+// ═══════════════════════════════════════════════════════════════
+function readFilters() {
+  return {
+    startDate: document.getElementById('fStartDate').value || '',
+    endDate:   document.getElementById('fEndDate').value   || '',
+    sortcode:  document.getElementById('fSortcode').value  || '',
+  };
+}
+
+function isFilterActive() {
+  var f = readFilters();
+  return !!(f.startDate || f.endDate || f.sortcode || document.getElementById('tableSearch').value);
+}
+
+function applyFilters() { loadData(false); }
+
+function clearFilters() {
+  document.getElementById('fStartDate').value  = '';
+  document.getElementById('fEndDate').value    = '';
+  document.getElementById('fSortcode').value   = '';
+  document.getElementById('tableSearch').value = '';
+  loadData(false);
+}
+
+function applySearch() { processAndRender(); }
+
+function fillSortcodeSelect() {
+  var sel = document.getElementById('fSortcode');
+  var cur = sel.value;
+  var cm  = S.colMap;
+  if (!cm.sortcode) return;
+  var set = {};
+  S.allRows.forEach(function (r) {
+    var sc = String(r[cm.sortcode] || '').trim();
+    if (sc) set[sc] = true;
+  });
+  var opts = ['<option value="">Todos</option>'].concat(
+    Object.keys(set).sort().map(function (sc) {
+      return '<option value="' + esc(sc) + '">' + esc(sc) + '</option>';
+    })
+  );
+  sel.innerHTML = opts.join('');
+  if (cur) sel.value = cur;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  REFRESH
+// ═══════════════════════════════════════════════════════════════
+function refreshData(force) { loadData(force !== false); }
+
+function startAutoRefresh() {
+  if (S.refreshTimer) clearInterval(S.refreshTimer);
+  S.refreshTimer = setInterval(function () { loadData(false); }, S.REFRESH_MS);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  EXPORTAÇÃO
+// ═══════════════════════════════════════════════════════════════
+function exportCSV() {
+  if (!S.displayRows.length) { showToast('Sem dados para exportar', 'error'); return; }
+  var hdrs = S.headers;
+  var csv  = '﻿' + hdrs.map(function (h) { return '"' + h + '"'; }).join(';') + '\n';
+  S.displayRows.forEach(function (row) {
+    csv += hdrs.map(function (h) {
+      return '"' + String(row[h] || '').replace(/"/g, '""') + '"';
+    }).join(';') + '\n';
+  });
+  download(csv, 'auditoria_stageout_' + dateTag() + '.csv', 'text/csv;charset=utf-8;');
+  showToast('CSV exportado!', 'success');
+}
+
+function exportExcel() {
+  if (!S.displayRows.length) { showToast('Sem dados para exportar', 'error'); return; }
+  var hdrs = S.headers;
+  var html = '<html xmlns:o="urn:schemas-microsoft-com:office:office" ' +
+             'xmlns:x="urn:schemas-microsoft-com:office:excel" ' +
+             'xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="UTF-8">' +
+             '<style>th{background:#7c3aed;color:#fff;font-weight:bold;padding:6px}' +
+             'td{padding:5px;border:1px solid #ddd}</style></head><body><table border="1">';
+  html += '<tr>' + hdrs.map(function (h) { return '<th>' + esc(h) + '</th>'; }).join('') + '</tr>';
+  S.displayRows.forEach(function (row) {
+    html += '<tr>' + hdrs.map(function (h) { return '<td>' + esc(String(row[h] || '')) + '</td>'; }).join('') + '</tr>';
+  });
+  html += '</table></body></html>';
+  download(html, 'auditoria_stageout_' + dateTag() + '.xls', 'application/vnd.ms-excel;charset=utf-8;');
+  showToast('Excel exportado!', 'success');
+}
+
+function download(content, filename, mime) {
+  var blob = new Blob([content], { type: mime });
+  var url  = URL.createObjectURL(blob);
+  var a    = Object.assign(document.createElement('a'), { href: url, download: filename });
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  HELPERS
+// ═══════════════════════════════════════════════════════════════
+function showOverlay(show) {
+  document.getElementById('loadingOverlay').classList.toggle('hidden', !show);
+}
+
+function showToast(msg, type) {
+  var wrap = document.getElementById('toastWrap');
+  var el   = document.createElement('div');
+  var icons = {
+    success: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+    error:   '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
+    info:    '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>'
+  };
+  el.className = 'toast toast-' + (type || 'info');
+  el.innerHTML = '<span class="toast-icon">' + (icons[type] || icons.info) + '</span>' +
+                 '<span>' + esc(msg) + '</span>';
+  wrap.appendChild(el);
+  setTimeout(function () { el.remove(); }, 4500);
+}
+
+function typeBadge(val) {
+  if (!val) return '<span class="badge badge-neutral">—</span>';
+  var s = String(val).toLowerCase();
+  if (s === 'gaiola')  return '<span class="badge badge-amber">Gaiola</span>';
+  if (s === 'scuttle') return '<span class="badge badge-cyan">Scuttle</span>';
+  return '<span class="badge badge-neutral">' + esc(val) + '</span>';
+}
+
+function fmtDatetime(val) {
+  if (!val) return '—';
+  // Já vem como 'yyyy-MM-dd HH:mm' do servidor
+  // Ou pode vir como string original da planilha
+  var d;
+  if (/^\d{4}-\d{2}-\d{2}/.test(val)) {
+    d = new Date(val.replace(' ', 'T'));
+  } else {
+    // Tenta formato brasileiro dd/MM/yyyy HH:mm:ss
+    var m = val.match(/^(\d{2})\/(\d{2})\/(\d{4})\s*(\d{2}:\d{2})?/);
+    if (m) d = new Date(m[3] + '-' + m[2] + '-' + m[1] + (m[4] ? 'T' + m[4] : 'T00:00'));
+    else return esc(val);
+  }
+  if (isNaN(d)) return esc(val);
+  var dateStr = d.toLocaleDateString('pt-BR');
+  var timeStr = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  return dateStr + ' ' + timeStr;
+}
+
+function dateTag() { return new Date().toISOString().slice(0, 10); }
+
+function esc(str) {
+  return String(str).replace(/[&<>"']/g, function (c) {
+    return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c];
+  });
+}
+</script>

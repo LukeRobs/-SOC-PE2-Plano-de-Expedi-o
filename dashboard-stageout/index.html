@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard Stage Out — Auditoria</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <?!= include('style') ?>
+</head>
+<body>
+
+  <!-- Loading Overlay -->
+  <div id="loadingOverlay" class="loading-overlay">
+    <div class="spinner-wrap">
+      <div class="spinner"></div>
+      <p class="spinner-label">Carregando dados...</p>
+    </div>
+  </div>
+
+  <!-- Header -->
+  <header class="dash-header">
+    <div class="header-left">
+      <div class="header-logo-wrap">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+          <polyline points="2 17 12 22 22 17"/>
+          <polyline points="2 12 12 17 22 12"/>
+        </svg>
+      </div>
+      <div>
+        <h1 class="header-title">Stage Out — Auditoria</h1>
+        <p class="header-sub">Dashboard Operacional · Tempo Real</p>
+      </div>
+    </div>
+    <div class="header-right">
+      <span id="lastUpdate" class="last-update-text">—</span>
+      <button class="btn btn-icon" onclick="refreshData(true)" title="Forçar atualização">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M11.534 7h3.932a.25.25 0 0 1 .192.41l-1.966 2.36a.25.25 0 0 1-.384 0l-1.966-2.36a.25.25 0 0 1 .192-.41zm-11 2h3.932a.25.25 0 0 0 .192-.41L2.692 6.23a.25.25 0 0 0-.384 0L.342 8.59A.25.25 0 0 0 .534 9z"/>
+          <path fill-rule="evenodd" d="M8 3c-1.552 0-2.94.707-3.857 1.818a.5.5 0 1 1-.771-.636A6.002 6.002 0 0 1 13.917 7H12.9A5.002 5.002 0 0 0 8 3zM3.1 9a5.002 5.002 0 0 0 7.757 2.97l.06.06a.5.5 0 1 1-.71.71l-.106-.106A6.002 6.002 0 0 1 2.083 9H3.1z"/>
+        </svg>
+      </button>
+      <button class="btn btn-outline btn-sm" onclick="exportCSV()">Exportar CSV</button>
+      <button class="btn btn-primary btn-sm" onclick="exportExcel()">Exportar Excel</button>
+    </div>
+  </header>
+
+  <!-- Main -->
+  <main class="dash-main">
+
+    <!-- KPI Cards -->
+    <section class="kpi-grid">
+
+      <div class="kpi-card" id="kpi-card-audit">
+        <div class="kpi-icon-wrap kpi-purple">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <polyline points="9 15 11 17 15 13"/>
+          </svg>
+        </div>
+        <div class="kpi-body">
+          <div class="kpi-val skeleton-text" id="kpiAuditorias">—</div>
+          <div class="kpi-lbl">Auditorias Realizadas</div>
+          <div class="kpi-sub" id="kpiAuditoriasSub"></div>
+        </div>
+        <div class="kpi-glow kpi-glow-purple"></div>
+      </div>
+
+      <div class="kpi-card" id="kpi-card-rua">
+        <div class="kpi-icon-wrap kpi-cyan">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 17l6-6 4 4 8-8"/>
+            <path d="M21 7v6h-6"/>
+          </svg>
+        </div>
+        <div class="kpi-body">
+          <div class="kpi-val skeleton-text" id="kpiRuas">—</div>
+          <div class="kpi-lbl">Ruas Auditadas</div>
+          <div class="kpi-sub" id="kpiRuasSub"></div>
+        </div>
+        <div class="kpi-glow kpi-glow-cyan"></div>
+      </div>
+
+      <div class="kpi-card" id="kpi-card-scuttle">
+        <div class="kpi-icon-wrap kpi-green">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+            <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+            <line x1="12" y1="22.08" x2="12" y2="12"/>
+          </svg>
+        </div>
+        <div class="kpi-body">
+          <div class="kpi-val skeleton-text" id="kpiScuttles">—</div>
+          <div class="kpi-lbl">Scuttles Auditados</div>
+          <div class="kpi-sub" id="kpiScuttlesSub"></div>
+        </div>
+        <div class="kpi-glow kpi-glow-green"></div>
+      </div>
+
+      <div class="kpi-card" id="kpi-card-gaiola">
+        <div class="kpi-icon-wrap kpi-amber">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7" rx="1"/>
+            <rect x="14" y="3" width="7" height="7" rx="1"/>
+            <rect x="14" y="14" width="7" height="7" rx="1"/>
+            <rect x="3" y="14" width="7" height="7" rx="1"/>
+          </svg>
+        </div>
+        <div class="kpi-body">
+          <div class="kpi-val skeleton-text" id="kpiGaiolas">—</div>
+          <div class="kpi-lbl">Gaiolas Auditadas</div>
+          <div class="kpi-sub" id="kpiGaiolasSub"></div>
+        </div>
+        <div class="kpi-glow kpi-glow-amber"></div>
+      </div>
+
+      <div class="kpi-card" id="kpi-card-sc">
+        <div class="kpi-icon-wrap kpi-pink">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+            <line x1="7" y1="7" x2="7.01" y2="7"/>
+          </svg>
+        </div>
+        <div class="kpi-body">
+          <div class="kpi-val skeleton-text" id="kpiSortcodes">—</div>
+          <div class="kpi-lbl">SortCodes Únicos</div>
+          <div class="kpi-sub" id="kpiSortcodesSub"></div>
+        </div>
+        <div class="kpi-glow kpi-glow-pink"></div>
+      </div>
+
+    </section>
+
+    <!-- Filters -->
+    <section class="filters-bar">
+      <div class="filters-row">
+        <div class="filter-field">
+          <label class="filter-label">Data Inicial</label>
+          <input type="date" id="fStartDate" class="filter-input" onchange="applyFilters()">
+        </div>
+        <div class="filter-field">
+          <label class="filter-label">Data Final</label>
+          <input type="date" id="fEndDate" class="filter-input" onchange="applyFilters()">
+        </div>
+        <div class="filter-field">
+          <label class="filter-label">SortCode</label>
+          <select id="fSortcode" class="filter-input" onchange="applyFilters()">
+            <option value="">Todos</option>
+          </select>
+        </div>
+        <div class="filter-actions">
+          <button class="btn btn-ghost" onclick="clearFilters()">Limpar</button>
+          <button class="btn btn-primary" onclick="applyFilters()">Aplicar</button>
+        </div>
+      </div>
+      <div class="filter-stats">
+        <span class="badge badge-info" id="badgeRecords">0 registros</span>
+        <span class="badge badge-purple" id="badgeAudits">0 auditorias</span>
+        <span class="badge badge-neutral" id="badgeFiltered" style="display:none">Filtrado</span>
+      </div>
+    </section>
+
+    <!-- Content Grid -->
+    <div class="content-grid">
+
+      <!-- Table -->
+      <section class="panel table-panel">
+        <div class="panel-header">
+          <h2 class="panel-title">Registros de Auditoria</h2>
+          <div class="table-controls">
+            <div class="search-wrap">
+              <span class="search-ico">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+              </span>
+              <input type="text" id="tableSearch" class="search-input"
+                     placeholder="Buscar em todos os campos..."
+                     oninput="applySearch()">
+            </div>
+            <div class="perpage-wrap">
+              <select id="perPage" class="filter-input filter-sm" onchange="goPage(1)">
+                <option value="10" selected>10</option>
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+              <span class="perpage-lbl">/ pág</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="table-wrap" id="tableWrap">
+          <div id="tableSkeleton" class="skel-rows">
+            <div class="skel-row"></div><div class="skel-row"></div>
+            <div class="skel-row"></div><div class="skel-row"></div>
+            <div class="skel-row"></div>
+          </div>
+          <div id="tableContainer"></div>
+        </div>
+
+        <div class="pagination-bar" id="paginationBar">
+          <span class="pag-info" id="pagInfo"></span>
+          <div class="pag-controls" id="pagControls"></div>
+        </div>
+      </section>
+
+      <!-- Chart -->
+      <section class="panel chart-panel">
+        <div class="panel-header">
+          <h2 class="panel-title">Top 10 SortCodes</h2>
+          <span class="panel-sub" id="chartSub">Auditorias por SortCode</span>
+        </div>
+        <div class="chart-area">
+          <canvas id="sortcodeChart"></canvas>
+        </div>
+        <div class="ranking-wrap" id="rankingWrap"></div>
+      </section>
+
+    </div>
+
+  </main>
+
+  <!-- Toast -->
+  <div id="toastWrap" class="toast-wrap"></div>
+
+  <?!= include('script') ?>
+</body>
+</html>
