@@ -245,6 +245,11 @@ function getData(cb) {
     cbs.forEach(fn => fn(err));
   };
 
+  const safeSpr = p => p.catch(e => {
+    console.warn('[spr] fetch failed, SPR_MAP will be empty:', e.message.split('\n')[0]);
+    return { values: [] };
+  });
+
   if (SERVICE_ACCOUNT) {
     getServiceAccountToken()
       .then(token => {
@@ -252,7 +257,7 @@ function getData(cb) {
           `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(range)}`,
           { headers: { Authorization: `Bearer ${token}` } }
         ).then(r => { if (!r.ok) throw new Error(`Sheets API ${r.status}`); return r.json(); });
-        return Promise.all([fetchRange(RANGE), fetchRange(SPR_RANGE)]);
+        return Promise.all([fetchRange(RANGE), safeSpr(fetchRange(SPR_RANGE))]);
       })
       .then(([raw, sprRaw]) => finish(raw, sprRaw))
       .catch(fail);
@@ -262,13 +267,13 @@ function getData(cb) {
       `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(range)}?key=${process.env.SHEETS_API_KEY}`
     ).then(r => { if (!r.ok) throw new Error(`Sheets API ${r.status}`); return r.json(); });
 
-    Promise.all([fetchRange(RANGE), fetchRange(SPR_RANGE)])
+    Promise.all([fetchRange(RANGE), safeSpr(fetchRange(SPR_RANGE))])
       .then(([raw, sprRaw]) => finish(raw, sprRaw))
       .catch(fail);
 
   } else {
     // gws CLI — fetch both ranges in parallel
-    Promise.all([gwsFetch(RANGE), gwsFetch(SPR_RANGE)])
+    Promise.all([gwsFetch(RANGE), safeSpr(gwsFetch(SPR_RANGE))])
       .then(([raw, sprRaw]) => finish(raw, sprRaw))
       .catch(err => {
         console.error('[api/data] gws error:', err.message.split('\n')[0]);
@@ -437,6 +442,16 @@ const server = http.createServer((req, res) => {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: e.message }));
       }
+    });
+    return;
+  }
+
+  // GET /api/spr — debug: retorna o SPR_MAP atual em cache
+  if (urlPath === '/api/spr') {
+    getData((err, data) => {
+      if (err) { res.writeHead(500); res.end(JSON.stringify({ error: err.message })); return; }
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' });
+      res.end(JSON.stringify({ SPR_MAP: data.SPR_MAP, count: Object.keys(data.SPR_MAP || {}).length }));
     });
     return;
   }
