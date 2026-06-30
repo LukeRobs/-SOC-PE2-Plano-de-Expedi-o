@@ -14,7 +14,7 @@ try {
 } catch (_) {}
 
 const SPREADSHEET_ID = '1Sk16vRNBUsQitL3cRUSIH86SyfQpxV9t08UW2YrSdmQ';
-const RANGE          = 'Daily!A1:Q3000';
+const RANGE          = 'Daily!A1:R3000';
 const CACHE_TTL      = 60 * 1000; // 60 seconds
 
 // ── Auth mode detection ───────────────────────────────────────────────
@@ -146,7 +146,8 @@ function processRawData(raw) {
       tr:     turno,
       ship:   ship,
       pct:    pct ? 1 : 0,
-      just:   r[16] || '',   // Col Q — justificativa da perda de CPT
+      just:    r[16] || '',   // Col Q — justificativa da perda de CPT
+      justSpr: r[17] || '',  // Col R — justificativa de SPR abaixo da meta
       rowNum: i + 2,         // Número da linha na planilha (header=1, dados a partir de 2)
     });
 
@@ -363,6 +364,62 @@ const server = http.createServer((req, res) => {
         res.end(JSON.stringify({ ok: true, rowNum }));
       } catch (e) {
         console.error('[justify] Erro:', e.message);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
+  // POST /api/justify-spr — busca linha pela LT e salva justificativa de SPR na col R
+  if (urlPath === '/api/justify-spr' && req.method === 'POST') {
+    let body = '';
+    req.on('data', d => { body += d; });
+    req.on('end', async () => {
+      try {
+        const { lt, text } = JSON.parse(body);
+        if (!lt) throw new Error('LT não informado');
+
+        if (!SERVICE_ACCOUNT) {
+          res.writeHead(501, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Escrita requer Service Account configurado' }));
+          return;
+        }
+
+        const token = await getServiceAccountToken();
+
+        const lookupUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent('Daily!B:B')}`;
+        const lookupResp = await fetch(lookupUrl, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (!lookupResp.ok) throw new Error(`Lookup error: ${lookupResp.status}`);
+        const lookupData = await lookupResp.json();
+        const colB = lookupData.values || [];
+
+        const rowIndex = colB.findIndex((row, i) => i > 0 && row[0] === lt);
+        if (rowIndex === -1) throw new Error(`LT "${lt}" não encontrada na planilha`);
+        const rowNum = rowIndex + 1;
+
+        const range = `Daily!R${rowNum}`;
+        const url   = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`;
+
+        const resp = await fetch(url, {
+          method: 'PUT',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ values: [[text]] }),
+        });
+
+        if (!resp.ok) {
+          const errText = await resp.text();
+          throw new Error(`Sheets write ${resp.status}: ${errText}`);
+        }
+
+        cacheFetchedAt = 0;
+        console.log(`[justify-spr] LT="${lt}" → Linha ${rowNum} → R="${text}"`);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, rowNum }));
+      } catch (e) {
+        console.error('[justify-spr] Erro:', e.message);
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: e.message }));
       }
