@@ -15,6 +15,7 @@ try {
 
 const SPREADSHEET_ID = '1Sk16vRNBUsQitL3cRUSIH86SyfQpxV9t08UW2YrSdmQ';
 const RANGE          = 'Daily!A1:R3000';
+const SPR_RANGE      = 'SPR!A1:F500';
 const CACHE_TTL      = 60 * 1000; // 60 seconds
 
 // ── Auth mode detection ───────────────────────────────────────────────
@@ -113,7 +114,29 @@ function getShipments(r) {
 
 const CARREGADAS = new Set(['Carregado', 'Carregado/Liberado', 'Finalizado']);
 
-function processRawData(raw) {
+// SPR: col A=nome, col B=sortcode, col C=carreta, col D=truck, col E=3/4, col F=toco
+function parseSprRaw(raw) {
+  const rows = Array.isArray(raw.values) ? raw.values.slice(1) : [];
+  const map  = {};
+  const parseSprNum = v => {
+    if (!v || v === '-') return null;
+    const n = parseInt(v.toString().replace(/[.,\s]/g, ''));
+    return isNaN(n) ? null : n;
+  };
+  rows.forEach(r => {
+    const sortcode = (r[1] || '').trim();
+    if (!sortcode || sortcode === '-') return;
+    map[sortcode] = {
+      carreta: parseSprNum(r[2]),
+      truck:   parseSprNum(r[3]),
+      trq:     parseSprNum(r[4]),
+      toco:    parseSprNum(r[5]),
+    };
+  });
+  return map;
+}
+
+function processRawData(raw, sprRaw) {
   const rows   = Array.isArray(raw.values) ? raw.values.slice(1) : [];
   const byDate = {};
   const allRows = [];
@@ -166,12 +189,34 @@ function processRawData(raw) {
     if (isCarr)  { tg.carregadas++; tg.shipCarregadas += ship; }
   });
 
-  const dates = Object.keys(byDate).sort();
+  const dates  = Object.keys(byDate).sort();
+  const sprMap = sprRaw ? parseSprRaw(sprRaw) : {};
   return { DATES: dates, BY_DATE: byDate, ALL_ROWS: allRows,
+           SPR_MAP: sprMap,
            generatedAt: Date.now(), rowCount: allRows.length };
 }
 
 // ── Cache / fetch logic ────────────────────────────────────────────────
+
+// Helper: fetch a single range via gws CLI, returns Promise<rawJson>
+function gwsFetch(range) {
+  return new Promise((resolve, reject) => {
+    const params = JSON.stringify({ spreadsheetId: SPREADSHEET_ID, range });
+    const child  = spawn('cmd.exe', ['/c', 'gws', 'sheets', 'spreadsheets', 'values', 'get', '--params', params],
+                          { env: process.env, maxBuffer: 20 * 1024 * 1024 });
+    let stdout = '', stderr = '';
+    child.stdout.on('data', d => { stdout += d; });
+    child.stderr.on('data', d => { stderr += d; });
+    child.on('close', code => {
+      if (code !== 0) {
+        const msg = stderr.replace(/Using keyring.*\n?/g, '').trim() || `gws exited ${code}`;
+        return reject(new Error(msg));
+      }
+      try { resolve(JSON.parse(stdout)); } catch (e) { reject(e); }
+    });
+    child.on('error', reject);
+  });
+}
 
 function getData(cb) {
   if (dataCache && Date.now() - cacheFetchedAt < CACHE_TTL) {
@@ -182,90 +227,59 @@ function getData(cb) {
   if (fetchInProgress) return;
   fetchInProgress = true;
 
+  const finish = (raw, sprRaw) => {
+    fetchInProgress = false;
+    const cbs = fetchCallbacks.splice(0);
+    dataCache      = processRawData(raw, sprRaw);
+    cacheFetchedAt = Date.now();
+    const sprCount = Object.keys(dataCache.SPR_MAP || {}).length;
+    console.log(`[api/data] Refreshed — ${dataCache.rowCount} rows, ${sprCount} destinos SPR`);
+    cbs.forEach(fn => fn(null, dataCache));
+  };
+
+  const fail = err => {
+    fetchInProgress = false;
+    const cbs = fetchCallbacks.splice(0);
+    console.error('[api/data] error:', err.message);
+    if (dataCache) return cbs.forEach(fn => fn(null, dataCache));
+    cbs.forEach(fn => fn(err));
+  };
+
   if (SERVICE_ACCOUNT) {
-    // ── Path A: Service Account JWT (private sheets) ──────────────────
     getServiceAccountToken()
       .then(token => {
-        const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(RANGE)}`;
-        return fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+        const fetchRange = range => fetch(
+          `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(range)}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        ).then(r => { if (!r.ok) throw new Error(`Sheets API ${r.status}`); return r.json(); });
+        return Promise.all([fetchRange(RANGE), fetchRange(SPR_RANGE)]);
       })
-      .then(r => { if (!r.ok) throw new Error(`Sheets API ${r.status}`); return r.json(); })
-      .then(raw => {
-        fetchInProgress = false;
-        const cbs = fetchCallbacks.splice(0);
-        dataCache      = processRawData(raw);
-        cacheFetchedAt = Date.now();
-        console.log(`[api/data] Refreshed via Service Account — ${dataCache.rowCount} rows`);
-        cbs.forEach(fn => fn(null, dataCache));
-      })
-      .catch(err => {
-        fetchInProgress = false;
-        const cbs = fetchCallbacks.splice(0);
-        console.error('[api/data] Service Account error:', err.message);
-        if (dataCache) return cbs.forEach(fn => fn(null, dataCache));
-        cbs.forEach(fn => fn(err));
-      });
+      .then(([raw, sprRaw]) => finish(raw, sprRaw))
+      .catch(fail);
+
   } else if (USE_API_KEY) {
-    // ── Path B: API Key (public sheets only) ─────────────────────────
-    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(RANGE)}?key=${process.env.SHEETS_API_KEY}`;
-    fetch(url)
-      .then(r => { if (!r.ok) throw new Error(`Sheets API ${r.status}`); return r.json(); })
-      .then(raw => {
-        fetchInProgress = false;
-        const cbs = fetchCallbacks.splice(0);
-        dataCache      = processRawData(raw);
-        cacheFetchedAt = Date.now();
-        console.log(`[api/data] Refreshed via API Key — ${dataCache.rowCount} rows`);
-        cbs.forEach(fn => fn(null, dataCache));
-      })
-      .catch(err => {
-        fetchInProgress = false;
-        const cbs = fetchCallbacks.splice(0);
-        console.error('[api/data] API Key error:', err.message);
-        if (dataCache) return cbs.forEach(fn => fn(null, dataCache));
-        cbs.forEach(fn => fn(err));
-      });
+    const fetchRange = range => fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(range)}?key=${process.env.SHEETS_API_KEY}`
+    ).then(r => { if (!r.ok) throw new Error(`Sheets API ${r.status}`); return r.json(); });
+
+    Promise.all([fetchRange(RANGE), fetchRange(SPR_RANGE)])
+      .then(([raw, sprRaw]) => finish(raw, sprRaw))
+      .catch(fail);
+
   } else {
-    // ── Path B: gws CLI (local Windows dev, uses OAuth keyring) ──────────
-    const params = JSON.stringify({ spreadsheetId: SPREADSHEET_ID, range: RANGE });
-    const child  = spawn('cmd.exe', ['/c', 'gws', 'sheets', 'spreadsheets', 'values', 'get', '--params', params],
-                          { env: process.env, maxBuffer: 20 * 1024 * 1024 });
-
-    let stdout = '', stderr = '';
-    child.stdout.on('data', d => { stdout += d; });
-    child.stderr.on('data', d => { stderr += d; });
-
-    child.on('close', code => {
-      fetchInProgress = false;
-      const cbs = fetchCallbacks.splice(0);
-
-      if (code !== 0) {
-        const errMsg = stderr.replace(/Using keyring.*\n?/g, '').trim() || `gws exited ${code}`;
-        console.error('[api/data] gws error:', errMsg.split('\n')[0]);
-        if (dataCache) { console.warn('[api/data] Serving stale cache'); return cbs.forEach(fn => fn(null, dataCache)); }
-        return cbs.forEach(fn => fn(new Error(errMsg)));
-      }
-
-      try {
-        const raw = JSON.parse(stdout);
-        dataCache      = processRawData(raw);
-        cacheFetchedAt = Date.now();
-        console.log(`[api/data] Refreshed via gws — ${dataCache.rowCount} rows, ${dataCache.DATES.length} dates`);
-        cbs.forEach(fn => fn(null, dataCache));
-      } catch (e) {
-        console.error('[api/data] Parse error:', e.message);
-        if (dataCache) return cbs.forEach(fn => fn(null, dataCache));
-        cbs.forEach(fn => fn(e));
-      }
-    });
-
-    child.on('error', err => {
-      fetchInProgress = false;
-      const cbs = fetchCallbacks.splice(0);
-      console.error('[api/data] spawn error:', err.message);
-      if (dataCache) return cbs.forEach(fn => fn(null, dataCache));
-      cbs.forEach(fn => fn(err));
-    });
+    // gws CLI — fetch both ranges in parallel
+    Promise.all([gwsFetch(RANGE), gwsFetch(SPR_RANGE)])
+      .then(([raw, sprRaw]) => finish(raw, sprRaw))
+      .catch(err => {
+        console.error('[api/data] gws error:', err.message.split('\n')[0]);
+        if (dataCache) {
+          fetchInProgress = false;
+          const cbs = fetchCallbacks.splice(0);
+          console.warn('[api/data] Serving stale cache');
+          return cbs.forEach(fn => fn(null, dataCache));
+        }
+        fail(err);
+      });
   }
 }
 

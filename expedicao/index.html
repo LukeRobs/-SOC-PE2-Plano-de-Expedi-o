@@ -800,57 +800,8 @@ function getThemeColors() {
   };
 }
 
-// ─── SPR TABLE (por destino × tipo de veículo) ────────
-// Fonte: [SOC-PE2] Plano de Expedição - SPR.csv
-// Números = meta mínima de pacotes por rota
-const SPR_TABLE = {
-  'SoC_RJ_Duque de Caxias':              { carreta:11145, truck:6642,  trq:4982,  toco:2491  },
-  'SoC_RS_Gravataí_02':                  { carreta:4116,  truck:2993,  trq:2245,  toco:1122  },
-  'SoC_SC_Itajaí':                       { carreta:3953,  truck:2894,  trq:2171,  toco:1085  },
-  'SoC_SP_Piracicaba':                   { carreta:7910,  truck:4708,  trq:3531,  toco:1766  },
-  'SoC_SP_Cravinhos':                    { carreta:8798,  truck:6526,  trq:3918,  toco:1959  },
-  'SoC_SP_São Bernardo do Campo':        { carreta:9946,  truck:6552,  trq:4440,  toco:2220  },
-  'LM Hub_AL_Maceió_01':                 { carreta:4897,  truck:2819,  trq:2115,  toco:1057  },
-  'LM Hub_AL_Arapiraca':                 { carreta:5785,  truck:3312,  trq:2484,  toco:1242  },
-  'LM Hub_BA_Itabuna':                   { carreta:7722,  truck:4427,  trq:3321,  toco:1660  },
-  'LM Hub_BA_Vitória da Conquista':      { carreta:6607,  truck:3815,  trq:2861,  toco:1431  },
-  'LM Hub_BA_FX_Vitória Conquista':      { carreta:5772,  truck:3331,  trq:2499,  toco:1249  },
-  'LM Hub_BA_Juazeiro':                  { carreta:5817,  truck:3347,  trq:2510,  toco:1255  },
-  'LM Hub_CE_Juazeiro do Norte':         { carreta:4890,  truck:2812,  trq:2109,  toco:1054  },
-  'LM Hub_ES_Serra':                     { carreta:4878,  truck:2736,  trq:2124,  toco:1062  },
-  'LM Hub_ES_Linhares':                  { carreta:4691,  truck:2706,  trq:2030,  toco:1015  },
-  'LM Hub_ES_São Mateus':                { carreta:5112,  truck:2884,  trq:2574,  toco:1104  },
-  'LM Hub_MG_Contagem_01':              { carreta:3391,  truck:2492,  trq:1458,  toco:729   },
-  'LM Hub_MG_Manhuaçu':                 { carreta:4209,  truck:2429,  trq:1822,  toco:911   },
-  'LM Hub_MG_Montes Claros':            { carreta:5464,  truck:3144,  trq:2358,  toco:1179  },
-  'LM Hub_MG_Barbacena':                { carreta:4036,  truck:3204,  trq:1744,  toco:872   },
-  'LM Hub_MG_Ubá':                      { carreta:4571,  truck:2300,  trq:1979,  toco:990   },
-  'LM Hub_MG_Lagoa da Prata':           { carreta:4713,  truck:2713,  trq:2035,  toco:1017  },
-  'LM Hub_MG_Divinópolis':              { carreta:5904,  truck:3372,  trq:2529,  toco:1265  },
-  'LM Hub_MG_Ipatinga':                 { carreta:5070,  truck:2920,  trq:2190,  toco:1095  },
-  'LM Hub_MG_Patos de Minas':           { carreta:5534,  truck:3441,  trq:2369,  toco:1185  },
-  'LM Hub_MG_Vespasiano':               { carreta:5829,  truck:3977,  trq:2519,  toco:1259  },
-  'LM Hub_MG_Teófilo Otoni':            { carreta:6052,  truck:3487,  trq:2615,  toco:1308  },
-  'LM Hub_MG_Varginha_Fausto':          { carreta:5754,  truck:3178,  trq:2220,  toco:1110  },
-  'LM Hub_MG_Sete Lagoas':              { carreta:4771,  truck:2746,  trq:2059,  toco:1030  },
-  'LM Hub_MG_Belo Horizonte_02':        { carreta:3622,  truck:2542,  trq:1560,  toco:780   },
-  'LM Hub_MG_Governador Valadares':     { carreta:4685,  truck:2699,  trq:2024,  toco:1012  },
-  'LM Hub_MG_São José da Lapa':         { carreta:5098,  truck:2931,  trq:2198,  toco:1099  },
-  'LM Hub_MG_Contagem 02':             { carreta:3903,  truck:3132,  trq:1680,  toco:840   },
-  'LM Hub_PI_Teresina_01':              { carreta:5165,  truck:2976,  trq:2232,  toco:1116  },
-  'LM Hub_PI_Teresina_02':              { carreta:5679,  truck:3251,  trq:2457,  toco:1229  },
-  'LM Hub_RJ_Cps dos Goytacazes':       { carreta:4791,  truck:2932,  trq:1828,  toco:null  },
-  'LM Hub_RN_Natal_01':                 { carreta:4674,  truck:2812,  trq:2109,  toco:1055  },
-  'LM Hub_SE_Aracaju_01':               { carreta:6384,  truck:3635,  trq:2726,  toco:1363  },
-  'LM Hub_SE_Aracaju_02':               { carreta:6133,  truck:3484,  trq:2613,  toco:1306  },
-  'SoC_BA_Simoes Filho':                { carreta:5354,  truck:2989,  trq:2242,  toco:1121  },
-  'SoC_CE_Itaitinga':                   { carreta:3862,  truck:2173,  trq:1630,  toco:815   },
-  'SoC_ES_Viana':                       { carreta:3428,  truck:1947,  trq:1460,  toco:730   },
-  'SoC_GO_Goiânia_02':                  { carreta:5582,  truck:3134,  trq:2351,  toco:1175  },
-  'SoC_PE_Jaboatão dos Guararapes':     { carreta:4833,  truck:2711,  trq:2033,  toco:1017  },
-  'SoC_PR_Campina Grande':              { carreta:4025,  truck:3230,  trq:2423,  toco:1211  },
-  'SoC_RJ_Rio de Janeiro':              { carreta:4032,  truck:2263,  trq:1697,  toco:849   },
-};
+// ─── SPR MAP (carregado dinamicamente do servidor) ────
+let SPR_MAP = {};
 
 function vtToSprKey(vt) {
   const v = (vt || '').toUpperCase();
@@ -862,7 +813,7 @@ function vtToSprKey(vt) {
 }
 
 function getSprMeta(dest, vt) {
-  const entry = SPR_TABLE[dest];
+  const entry = SPR_MAP[dest];
   if (!entry) return null;
   const key = vtToSprKey(vt);
   if (!key) return null;
@@ -944,6 +895,7 @@ function applyData(data) {
   DATES    = data.DATES;
   BY_DATE  = data.BY_DATE;
   ALL_ROWS = data.ALL_ROWS;
+  SPR_MAP  = data.SPR_MAP || {};
   lastGeneratedAt = data.generatedAt;
   ALL_ROWS.forEach(r => {
     if (_justOverrides[r.lt]    !== undefined) r.just    = _justOverrides[r.lt];
