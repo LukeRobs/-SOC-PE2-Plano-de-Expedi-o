@@ -120,8 +120,8 @@ function parseSprRaw(raw) {
   const map  = {};
   const parseSprNum = v => {
     if (v === undefined || v === null || v === '' || v === '-') return null;
-    // Se já é número (UNFORMATTED_VALUE), arredonda direto
-    if (typeof v === 'number') return Math.round(v) > 0 ? Math.round(v) : null;
+    // UNFORMATTED_VALUE retorna decimais em milhares (ex: 11.145 = 11145 pacotes)
+    if (typeof v === 'number') { const n = Math.round(v * 1000); return n > 0 ? n : null; }
     let s = v.toString().trim();
     // Remove sufixo decimal de zeros: "4,116.00" → "4,116" / "4.116,00" → "4.116"
     s = s.replace(/[.,]0+$/, '');
