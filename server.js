@@ -119,12 +119,19 @@ function parseSprRaw(raw) {
   const rows = Array.isArray(raw.values) ? raw.values.slice(1) : [];
   const map  = {};
   const parseSprNum = v => {
-    if (!v || v === '-') return null;
-    const n = parseInt(v.toString().replace(/[.,\s]/g, ''));
-    return isNaN(n) ? null : n;
+    if (v === undefined || v === null || v === '' || v === '-') return null;
+    // Se já é número (UNFORMATTED_VALUE), arredonda direto
+    if (typeof v === 'number') return Math.round(v) > 0 ? Math.round(v) : null;
+    let s = v.toString().trim();
+    // Remove sufixo decimal de zeros: "4,116.00" → "4,116" / "4.116,00" → "4.116"
+    s = s.replace(/[.,]0+$/, '');
+    // Remove separadores de milhar restantes
+    s = s.replace(/[.,]/g, '');
+    const n = parseInt(s);
+    return isNaN(n) || n <= 0 ? null : n;
   };
   rows.forEach(r => {
-    const sortcode = (r[1] || '').trim();
+    const sortcode = (r[1] || '').toString().trim();
     if (!sortcode || sortcode === '-') return;
     map[sortcode] = {
       carreta: parseSprNum(r[2]),
@@ -253,27 +260,55 @@ function getData(cb) {
   if (SERVICE_ACCOUNT) {
     getServiceAccountToken()
       .then(token => {
-        const fetchRange = range => fetch(
-          `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(range)}`,
+        const fetchRange = (range, qs = '') => fetch(
+          `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(range)}${qs}`,
           { headers: { Authorization: `Bearer ${token}` } }
         ).then(r => { if (!r.ok) throw new Error(`Sheets API ${r.status}`); return r.json(); });
-        return Promise.all([fetchRange(RANGE), safeSpr(fetchRange(SPR_RANGE))]);
+        return Promise.all([
+          fetchRange(RANGE),
+          safeSpr(fetchRange(SPR_RANGE, '?valueRenderOption=UNFORMATTED_VALUE')),
+        ]);
       })
       .then(([raw, sprRaw]) => finish(raw, sprRaw))
       .catch(fail);
 
   } else if (USE_API_KEY) {
-    const fetchRange = range => fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(range)}?key=${process.env.SHEETS_API_KEY}`
+    const key = process.env.SHEETS_API_KEY;
+    const fetchRange = (range, extra = '') => fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(range)}?key=${key}${extra}`
     ).then(r => { if (!r.ok) throw new Error(`Sheets API ${r.status}`); return r.json(); });
 
-    Promise.all([fetchRange(RANGE), safeSpr(fetchRange(SPR_RANGE))])
+    Promise.all([
+      fetchRange(RANGE),
+      safeSpr(fetchRange(SPR_RANGE, '&valueRenderOption=UNFORMATTED_VALUE')),
+    ])
       .then(([raw, sprRaw]) => finish(raw, sprRaw))
       .catch(fail);
 
   } else {
     // gws CLI — fetch both ranges in parallel
-    Promise.all([gwsFetch(RANGE), safeSpr(gwsFetch(SPR_RANGE))])
+    // SPR usa UNFORMATTED_VALUE para evitar problemas de formatação numérica
+    const gwsFetchSpr = () => {
+      const params = JSON.stringify({
+        spreadsheetId: SPREADSHEET_ID,
+        range: SPR_RANGE,
+        valueRenderOption: 'UNFORMATTED_VALUE',
+      });
+      return new Promise((resolve, reject) => {
+        const child = spawn('cmd.exe', ['/c', 'gws', 'sheets', 'spreadsheets', 'values', 'get', '--params', params],
+                            { env: process.env, maxBuffer: 20 * 1024 * 1024 });
+        let stdout = '', stderr = '';
+        child.stdout.on('data', d => { stdout += d; });
+        child.stderr.on('data', d => { stderr += d; });
+        child.on('close', code => {
+          if (code !== 0) return reject(new Error(stderr.replace(/Using keyring.*\n?/g, '').trim()));
+          try { resolve(JSON.parse(stdout)); } catch (e) { reject(e); }
+        });
+        child.on('error', reject);
+      });
+    };
+
+    Promise.all([gwsFetch(RANGE), safeSpr(gwsFetchSpr())])
       .then(([raw, sprRaw]) => finish(raw, sprRaw))
       .catch(err => {
         console.error('[api/data] gws error:', err.message.split('\n')[0]);
