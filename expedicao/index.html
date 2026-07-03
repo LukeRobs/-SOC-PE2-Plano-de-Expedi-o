@@ -1037,13 +1037,20 @@ function renderKPIs() {
   }
 
   let totalShip = 0, shipCarr = 0, cntCarr = 0;
+  let sprNaoAtingiu = 0, sprJustificado = 0;
   ALL_ROWS.forEach(r => {
     if (r.d !== selDate) return;
     if (selTurno !== 'ALL' && r.tr !== selTurno) return;
     totalShip += r.ship;
     if (CARREGADAS_SET.has(r.sr)) { cntCarr++; shipCarr += r.ship; }
+    const meta = getSprMeta(r.dest, r.vt);
+    if (meta != null && r.ship > 0 && r.ship < meta) {
+      sprNaoAtingiu++;
+      if (r.justSpr && r.justSpr.trim()) sprJustificado++;
+    }
   });
-  const spr = cntCarr > 0 ? Math.round(shipCarr / cntCarr) : 0;
+  const spr        = cntCarr > 0 ? Math.round(shipCarr / cntCarr) : 0;
+  const sprJustPct = sprNaoAtingiu > 0 ? Math.round(sprJustificado / sprNaoAtingiu * 100) : 0;
 
   const alertBox = document.getElementById('alertBox');
   if (perdeu > 0) {
@@ -1081,11 +1088,14 @@ function renderKPIs() {
       <div class="kpi-val">${perdeu}</div>
       <div class="kpi-sub">${perdeu>0?'cpt_real_robô > cpt_plan':'Sem ocorrências'}</div>
     </div>
-    <div class="kpi" style="--kc:var(--t1)">
+    <div class="kpi" style="--kc:${sprNaoAtingiu>0?'var(--danger)':'var(--ok)'}">
       <div class="kpi-icon">${SVG.package}</div>
-      <div class="kpi-label">SPR — Pacotes por Rota</div>
-      <div class="kpi-val">${fmtNum(spr)}</div>
-      <div class="kpi-sub">Σ pacotes / viagens carregadas (${cntCarr})</div>
+      <div class="kpi-label">Não atingiram SPR</div>
+      <div class="kpi-val" style="display:flex;align-items:baseline;gap:8px;">
+        ${sprNaoAtingiu}
+        <span style="font-size:1rem;font-weight:700;color:${sprNaoAtingiu>0?(sprJustPct===100?'var(--ok)':'var(--warn)'):'var(--muted)'};">(${sprJustPct}%)</span>
+      </div>
+      <div class="kpi-sub">${sprNaoAtingiu>0?`${sprJustificado} de ${sprNaoAtingiu} justificados`:'Todas as rotas atingiram a meta'}</div>
     </div>
     <div class="kpi" style="--kc:var(--t2)">
       <div class="kpi-icon">${SVG.bar}</div>
