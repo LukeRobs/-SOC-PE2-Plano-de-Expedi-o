@@ -1471,7 +1471,15 @@ async function saveJustify() {
 
     document.getElementById('jmodalOverlay').classList.remove('open');
     renderTable();
+    renderKPIs();
     showRefreshToast('Justificativa salva na planilha');
+    // re-fetch after 3s to sync with sheet (bypasses server cache)
+    setTimeout(async () => {
+      try {
+        const fresh = await fetch('/api/data?nocache=1&t=' + Date.now());
+        if (fresh.ok) { applyData(await fresh.json()); renderKPIs(); renderTable(); }
+      } catch (_) {}
+    }, 3000);
   } catch (e) {
     btn.disabled = false;
     btn.textContent = 'Salvar';

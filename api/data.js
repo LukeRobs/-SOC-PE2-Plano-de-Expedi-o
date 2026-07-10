@@ -12,7 +12,7 @@ module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  if (cache && Date.now() < cacheExp) {
+  if (cache && Date.now() < cacheExp && !req.query.nocache) {
     res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate=30');
     return res.status(200).json(cache);
   }
