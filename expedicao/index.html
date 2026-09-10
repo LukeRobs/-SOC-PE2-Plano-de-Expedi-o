@@ -258,6 +258,22 @@
     .alert strong { color:#fca5a5; }
     .alert.hidden { display:none; }
 
+    /* ─── NO-DATA BANNER (estação sem dados) ─────────── */
+    .nodata-banner {
+      display:flex; align-items:center; gap:var(--space-3);
+      background:var(--surface); border:1px dashed var(--border);
+      border-radius:var(--radius);
+      margin:var(--space-4) var(--space-6) 0;
+      padding:var(--space-4) var(--space-5);
+      color:var(--text-2);
+    }
+    .nodata-banner svg { width:18px; height:18px; color:var(--muted); flex-shrink:0; }
+    .nodata-banner strong { color:var(--text); font-weight:700; display:block; font-size:.82rem; }
+    .nodata-banner span { font-size:.72rem; color:var(--muted); }
+    .nodata-banner.hidden { display:none; }
+    @media (max-width:1024px){ .nodata-banner { margin-inline:var(--space-4); } }
+    @media (max-width:640px){ .nodata-banner { margin-inline:var(--space-3); } }
+
     /* ─── KPI GRID ───────────────────────────────────── */
     .kpi-grid {
       display:grid; grid-template-columns:repeat(6,1fr);
@@ -649,6 +665,16 @@
 <div class="filter-bar">
   <div class="fb-group">
     <span class="fb-label">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+      Estação
+    </span>
+    <div class="turno-btns" id="stationBtns">
+      <button class="tb" id="btn-ST-PE-02" onclick="setStation('PE-02')">PE-02</button>
+      <button class="tb" id="btn-ST-PE-04" onclick="setStation('PE-04')">PE-04</button>
+    </div>
+  </div>
+  <div class="fb-group">
+    <span class="fb-label">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
       Data
     </span>
@@ -668,6 +694,15 @@
     </div>
   </div>
   <span class="filter-summary" id="filterSummary"></span>
+</div>
+
+<!-- NO-DATA BANNER -->
+<div class="nodata-banner hidden" id="nodataBanner" style="margin-top:12px;">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+  <div>
+    <strong id="nodataTitle">Sem dados</strong>
+    <span id="nodataMsg">A planilha desta estação ainda não possui registros.</span>
+  </div>
 </div>
 
 <!-- ALERT -->
@@ -838,6 +873,12 @@ const TODAY = getTodayStr();
 let selDate  = TODAY;
 let selTurno = 'T2';
 
+// ─── ESTAÇÃO (PE-02 / PE-04) ──────────────────────────
+const STATION_TAGS = { 'PE-02': 'SOC-PE2', 'PE-04': 'SOC-PE4' };
+let selStation = localStorage.getItem('exp_station');
+if (!STATION_TAGS[selStation]) selStation = 'PE-02';
+let NO_DATA = false;
+
 // ─── HELPERS ──────────────────────────────────────────
 const fmtDate = dt => { const [y,m,d] = dt.split('-'); return `${d}/${m}/${y}`; };
 
@@ -885,8 +926,9 @@ const SVG = {
 };
 
 // ─── DATA LOADING ─────────────────────────────────────
-async function fetchData() {
-  const resp = await fetch('/api/data?t=' + Date.now());
+async function fetchData(opts) {
+  const nocache = opts && opts.nocache ? '&nocache=1' : '';
+  const resp = await fetch('/api/data?station=' + encodeURIComponent(selStation) + nocache + '&t=' + Date.now());
   if (!resp.ok) throw new Error('HTTP ' + resp.status);
   return resp.json();
 }
@@ -896,6 +938,7 @@ function applyData(data) {
   BY_DATE  = data.BY_DATE;
   ALL_ROWS = data.ALL_ROWS;
   SPR_MAP  = data.SPR_MAP || {};
+  NO_DATA  = !!data.noData || (Array.isArray(data.DATES) && data.DATES.length === 0);
   lastGeneratedAt = data.generatedAt;
   ALL_ROWS.forEach(r => {
     if (_justOverrides[r.lt]    !== undefined) r.just    = _justOverrides[r.lt];
@@ -904,7 +947,8 @@ function applyData(data) {
 }
 
 async function loadInitial() {
-  document.getElementById('loadingMsg').textContent = 'Carregando dados da planilha…';
+  applyStationUI();
+  document.getElementById('loadingMsg').textContent = `Carregando dados de ${selStation}…`;
   try {
     const data = await fetchData();
     applyData(data);
@@ -921,7 +965,13 @@ async function loadInitial() {
 async function pollData() {
   try {
     const data = await fetchData();
-    if (data.generatedAt !== lastGeneratedAt) {
+    if (data.noData) {
+      if (!NO_DATA) { applyData(data); buildDateSelector(); render(); }
+      NO_DATA = true;
+      updateLastFetched(data.generatedAt);
+      return;
+    }
+    if (NO_DATA || data.generatedAt !== lastGeneratedAt) {
       applyData(data);
       rebuildDateSelector();
       render();
@@ -986,7 +1036,7 @@ function rebuildDateSelector() {
 }
 
 function goToday() {
-  const avail = DATES.includes(TODAY) ? TODAY : DATES[DATES.length-1];
+  const avail = DATES.includes(TODAY) ? TODAY : (DATES[DATES.length-1] || TODAY);
   document.getElementById('selDate').value = avail;
   selDate = avail;
   render();
@@ -1006,11 +1056,60 @@ function applyFilter() {
   render();
 }
 
+// ─── ESTAÇÃO ──────────────────────────────────────────
+function applyStationUI() {
+  ['PE-02','PE-04'].forEach(x => {
+    const btn = document.getElementById('btn-ST-'+x);
+    if (btn) btn.className = 'tb' + (x === selStation ? ' active-all' : '');
+  });
+  const em = document.querySelector('header h1 em');
+  if (em) em.textContent = STATION_TAGS[selStation] || 'SOC-PE2';
+  document.title = `[${STATION_TAGS[selStation] || 'SOC-PE2'}] Plano de Expedição`;
+}
+
+function updateNoDataBanner() {
+  const show = NO_DATA;
+  document.getElementById('nodataBanner').classList.toggle('hidden', !show);
+  if (show) {
+    document.getElementById('nodataTitle').textContent = `${selStation} — sem dados`;
+    document.getElementById('nodataMsg').textContent =
+      `A planilha da estação ${selStation} ainda não possui registros na aba Daily.`;
+  }
+  document.getElementById('filterSummary').textContent = show
+    ? `${selStation} · sem dados`
+    : `${selStation} · ${fmtDate(selDate)} · Turno ${selTurno}`;
+}
+
+async function setStation(st) {
+  if (st === selStation || !STATION_TAGS[st]) return;
+  selStation = st;
+  try { localStorage.setItem('exp_station', st); } catch (_) {}
+  applyStationUI();
+
+  const ov = document.getElementById('loadingOverlay');
+  ov.classList.remove('done');
+  document.getElementById('loadingMsg').textContent = `Carregando dados de ${st}…`;
+  document.getElementById('liveDot').classList.add('stale');
+
+  try {
+    const data = await fetchData({ nocache: true });
+    applyData(data);
+    buildDateSelector();
+    render();
+    updateLastFetched(data.generatedAt);
+  } catch (e) {
+    console.error('setStation failed:', e);
+    document.getElementById('loadingMsg').textContent = 'Falha ao carregar dados. Recarregue a página.';
+    return;
+  }
+  ov.classList.add('done');
+}
+
 // ─── RENDER ───────────────────────────────────────────
 let _chartLine, _chartDonut, _chartConc;
 
 function render() {
-  document.getElementById('filterSummary').textContent = `${fmtDate(selDate)} · Turno ${selTurno}`;
+  updateNoDataBanner();
   renderKPIs();
   rebuildLineChart();
   rebuildDonutChart();
@@ -1455,7 +1554,7 @@ async function saveJustify() {
     const resp = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ lt: _justifyLT, text }),
+      body: JSON.stringify({ lt: _justifyLT, text, station: selStation }),
     });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || 'Erro ao salvar');
@@ -1476,8 +1575,8 @@ async function saveJustify() {
     // re-fetch after 3s to sync with sheet (bypasses server cache)
     setTimeout(async () => {
       try {
-        const fresh = await fetch('/api/data?nocache=1&t=' + Date.now());
-        if (fresh.ok) { applyData(await fresh.json()); renderKPIs(); renderTable(); }
+        const fresh = await fetchData({ nocache: true });
+        applyData(fresh); renderKPIs(); renderTable();
       } catch (_) {}
     }, 3000);
   } catch (e) {

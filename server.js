@@ -13,10 +13,14 @@ try {
   });
 } catch (_) {}
 
-const SPREADSHEET_ID = '1Sk16vRNBUsQitL3cRUSIH86SyfQpxV9t08UW2YrSdmQ';
+const { STATIONS, DEFAULT_STATION, resolveStation } = require('./api/_lib/stations');
+const SPREADSHEET_ID = STATIONS[DEFAULT_STATION].spreadsheetId; // compat p/ handlers legados
 const RANGE          = 'Daily!A1:R3000';
 const SPR_RANGE      = 'SPR!A1:F500';
 const CACHE_TTL      = 60 * 1000; // 60 seconds
+
+// querystring helper
+const qParam = (reqUrl, name) => new URLSearchParams((reqUrl.split('?')[1] || '')).get(name);
 
 // ── Auth mode detection ───────────────────────────────────────────────
 // Priority: 1) Service Account file  2) Service Account base64  3) API Key  4) gws CLI
@@ -67,10 +71,8 @@ async function getServiceAccountToken() {
   return saToken;
 }
 
-let dataCache      = null;
-let cacheFetchedAt = 0;
-let fetchInProgress = false;
-let fetchCallbacks  = [];
+const dataCaches = {}; // station -> { data, fetchedAt }
+const fetchState = {}; // station -> { inProgress, callbacks: [] }
 
 // ── Data-processing helpers (mirrors gen_daily.js logic) ──────────────
 
@@ -206,9 +208,11 @@ function processRawData(raw, sprRaw) {
 // ── Cache / fetch logic ────────────────────────────────────────────────
 
 // Helper: fetch a single range via gws CLI, returns Promise<rawJson>
-function gwsFetch(range) {
+function gwsFetch(spreadsheetId, range, valueRenderOption) {
   return new Promise((resolve, reject) => {
-    const params = JSON.stringify({ spreadsheetId: SPREADSHEET_ID, range });
+    const p = { spreadsheetId, range };
+    if (valueRenderOption) p.valueRenderOption = valueRenderOption;
+    const params = JSON.stringify(p);
     const child  = spawn('cmd.exe', ['/c', 'gws', 'sheets', 'spreadsheets', 'values', 'get', '--params', params],
                           { env: process.env, maxBuffer: 20 * 1024 * 1024 });
     let stdout = '', stderr = '';
@@ -225,30 +229,54 @@ function gwsFetch(range) {
   });
 }
 
-function getData(cb) {
-  if (dataCache && Date.now() - cacheFetchedAt < CACHE_TTL) {
-    return cb(null, dataCache);
+function emptyResult(station, reason) {
+  return {
+    DATES: [], BY_DATE: {}, ALL_ROWS: [], SPR_MAP: {},
+    generatedAt: Date.now(), rowCount: 0,
+    station, noData: true, reason: reason || null,
+  };
+}
+
+function getData(station, cb) {
+  station = resolveStation(station) || DEFAULT_STATION;
+  const spreadsheetId = STATIONS[station].spreadsheetId;
+
+  const cached = dataCaches[station];
+  if (cached && Date.now() - cached.fetchedAt < CACHE_TTL) {
+    return cb(null, cached.data);
   }
 
-  fetchCallbacks.push(cb);
-  if (fetchInProgress) return;
-  fetchInProgress = true;
+  if (!fetchState[station]) fetchState[station] = { inProgress: false, callbacks: [] };
+  const st = fetchState[station];
+  st.callbacks.push(cb);
+  if (st.inProgress) return;
+  st.inProgress = true;
+
+  const deliver = data => {
+    st.inProgress = false;
+    dataCaches[station] = { data, fetchedAt: Date.now() };
+    st.callbacks.splice(0).forEach(fn => fn(null, data));
+  };
 
   const finish = (raw, sprRaw) => {
-    fetchInProgress = false;
-    const cbs = fetchCallbacks.splice(0);
-    dataCache      = processRawData(raw, sprRaw);
-    cacheFetchedAt = Date.now();
-    const sprCount = Object.keys(dataCache.SPR_MAP || {}).length;
-    console.log(`[api/data] Refreshed — ${dataCache.rowCount} rows, ${sprCount} destinos SPR`);
-    cbs.forEach(fn => fn(null, dataCache));
+    const data = processRawData(raw, sprRaw);
+    data.station = station;
+    if (data.rowCount === 0) data.noData = true;
+    const sprCount = Object.keys(data.SPR_MAP || {}).length;
+    console.log(`[api/data] ${station} refreshed — ${data.rowCount} rows, ${sprCount} destinos SPR`);
+    deliver(data);
   };
 
   const fail = err => {
-    fetchInProgress = false;
-    const cbs = fetchCallbacks.splice(0);
-    console.error('[api/data] error:', err.message);
-    if (dataCache) return cbs.forEach(fn => fn(null, dataCache));
+    console.error(`[api/data] ${station} error:`, err.message.split('\n')[0]);
+    // Estação não-padrão sem acesso / aba Daily vazia → responde "sem dados"
+    if (station !== DEFAULT_STATION) return deliver(emptyResult(station, err.message));
+    st.inProgress = false;
+    const cbs = st.callbacks.splice(0);
+    if (dataCaches[station]) {
+      console.warn('[api/data] Serving stale cache');
+      return cbs.forEach(fn => fn(null, dataCaches[station].data));
+    }
     cbs.forEach(fn => fn(err));
   };
 
@@ -261,7 +289,7 @@ function getData(cb) {
     getServiceAccountToken()
       .then(token => {
         const fetchRange = (range, qs = '') => fetch(
-          `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(range)}${qs}`,
+          `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}${qs}`,
           { headers: { Authorization: `Bearer ${token}` } }
         ).then(r => { if (!r.ok) throw new Error(`Sheets API ${r.status}`); return r.json(); });
         return Promise.all([
@@ -275,7 +303,7 @@ function getData(cb) {
   } else if (USE_API_KEY) {
     const key = process.env.SHEETS_API_KEY;
     const fetchRange = (range, extra = '') => fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(range)}?key=${key}${extra}`
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}?key=${key}${extra}`
     ).then(r => { if (!r.ok) throw new Error(`Sheets API ${r.status}`); return r.json(); });
 
     Promise.all([
@@ -288,43 +316,17 @@ function getData(cb) {
   } else {
     // gws CLI — fetch both ranges in parallel
     // SPR usa UNFORMATTED_VALUE para evitar problemas de formatação numérica
-    const gwsFetchSpr = () => {
-      const params = JSON.stringify({
-        spreadsheetId: SPREADSHEET_ID,
-        range: SPR_RANGE,
-        valueRenderOption: 'UNFORMATTED_VALUE',
-      });
-      return new Promise((resolve, reject) => {
-        const child = spawn('cmd.exe', ['/c', 'gws', 'sheets', 'spreadsheets', 'values', 'get', '--params', params],
-                            { env: process.env, maxBuffer: 20 * 1024 * 1024 });
-        let stdout = '', stderr = '';
-        child.stdout.on('data', d => { stdout += d; });
-        child.stderr.on('data', d => { stderr += d; });
-        child.on('close', code => {
-          if (code !== 0) return reject(new Error(stderr.replace(/Using keyring.*\n?/g, '').trim()));
-          try { resolve(JSON.parse(stdout)); } catch (e) { reject(e); }
-        });
-        child.on('error', reject);
-      });
-    };
-
-    Promise.all([gwsFetch(RANGE), safeSpr(gwsFetchSpr())])
+    Promise.all([
+      gwsFetch(spreadsheetId, RANGE),
+      safeSpr(gwsFetch(spreadsheetId, SPR_RANGE, 'UNFORMATTED_VALUE')),
+    ])
       .then(([raw, sprRaw]) => finish(raw, sprRaw))
-      .catch(err => {
-        console.error('[api/data] gws error:', err.message.split('\n')[0]);
-        if (dataCache) {
-          fetchInProgress = false;
-          const cbs = fetchCallbacks.splice(0);
-          console.warn('[api/data] Serving stale cache');
-          return cbs.forEach(fn => fn(null, dataCache));
-        }
-        fail(err);
-      });
+      .catch(fail);
   }
 }
 
 // Pre-warm cache on startup
-getData((err, data) => {
+getData(DEFAULT_STATION, (err, data) => {
   if (err) console.error('[startup] Initial data fetch failed:', err.message);
   else     console.log(`[startup] Data ready — ${data.rowCount} rows across ${data.DATES.length} dates`);
 });
@@ -371,8 +373,11 @@ const server = http.createServer((req, res) => {
     req.on('data', d => { body += d; });
     req.on('end', async () => {
       try {
-        const { lt, text } = JSON.parse(body);
+        const { lt, text, station: stationRaw } = JSON.parse(body);
         if (!lt) throw new Error('LT não informado');
+        const station = resolveStation(stationRaw);
+        if (!station) throw new Error(`Estação inválida: ${stationRaw || '(vazio)'}`);
+        const spreadsheetId = STATIONS[station].spreadsheetId;
 
         if (!SERVICE_ACCOUNT) {
           res.writeHead(501, { 'Content-Type': 'application/json' });
@@ -383,7 +388,7 @@ const server = http.createServer((req, res) => {
         const token = await getServiceAccountToken();
 
         // 1. Busca col B inteira para encontrar a linha correta pela LT
-        const lookupUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent('Daily!B:B')}`;
+        const lookupUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent('Daily!B:B')}`;
         const lookupResp = await fetch(lookupUrl, {
           headers: { 'Authorization': `Bearer ${token}` },
         });
@@ -397,7 +402,7 @@ const server = http.createServer((req, res) => {
 
         // 2. Escreve na col Q da linha encontrada
         const range = `Daily!Q${rowNum}`;
-        const url   = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`;
+        const url   = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`;
 
         const resp = await fetch(url, {
           method: 'PUT',
@@ -410,12 +415,12 @@ const server = http.createServer((req, res) => {
           throw new Error(`Sheets write ${resp.status}: ${errText}`);
         }
 
-        // Invalida cache para próxima leitura pegar a coluna Q atualizada
-        cacheFetchedAt = 0;
+        // Invalida cache da estação para próxima leitura pegar a coluna Q atualizada
+        if (dataCaches[station]) dataCaches[station].fetchedAt = 0;
 
-        console.log(`[justify] LT="${lt}" → Linha ${rowNum} → Q="${text}"`);
+        console.log(`[justify] ${station} LT="${lt}" → Linha ${rowNum} → Q="${text}"`);
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: true, rowNum }));
+        res.end(JSON.stringify({ ok: true, rowNum, station }));
       } catch (e) {
         console.error('[justify] Erro:', e.message);
         res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -431,8 +436,11 @@ const server = http.createServer((req, res) => {
     req.on('data', d => { body += d; });
     req.on('end', async () => {
       try {
-        const { lt, text } = JSON.parse(body);
+        const { lt, text, station: stationRaw } = JSON.parse(body);
         if (!lt) throw new Error('LT não informado');
+        const station = resolveStation(stationRaw);
+        if (!station) throw new Error(`Estação inválida: ${stationRaw || '(vazio)'}`);
+        const spreadsheetId = STATIONS[station].spreadsheetId;
 
         if (!SERVICE_ACCOUNT) {
           res.writeHead(501, { 'Content-Type': 'application/json' });
@@ -442,7 +450,7 @@ const server = http.createServer((req, res) => {
 
         const token = await getServiceAccountToken();
 
-        const lookupUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent('Daily!B:B')}`;
+        const lookupUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent('Daily!B:B')}`;
         const lookupResp = await fetch(lookupUrl, {
           headers: { 'Authorization': `Bearer ${token}` },
         });
@@ -455,7 +463,7 @@ const server = http.createServer((req, res) => {
         const rowNum = rowIndex + 1;
 
         const range = `Daily!R${rowNum}`;
-        const url   = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`;
+        const url   = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`;
 
         const resp = await fetch(url, {
           method: 'PUT',
@@ -468,10 +476,10 @@ const server = http.createServer((req, res) => {
           throw new Error(`Sheets write ${resp.status}: ${errText}`);
         }
 
-        cacheFetchedAt = 0;
-        console.log(`[justify-spr] LT="${lt}" → Linha ${rowNum} → R="${text}"`);
+        if (dataCaches[station]) dataCaches[station].fetchedAt = 0;
+        console.log(`[justify-spr] ${station} LT="${lt}" → Linha ${rowNum} → R="${text}"`);
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: true, rowNum }));
+        res.end(JSON.stringify({ ok: true, rowNum, station }));
       } catch (e) {
         console.error('[justify-spr] Erro:', e.message);
         res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -481,12 +489,12 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // GET /api/spr — debug: retorna o SPR_MAP atual em cache
+  // GET /api/spr?station=PE-02|PE-04 — debug: retorna o SPR_MAP atual em cache
   if (urlPath === '/api/spr') {
-    getData((err, data) => {
+    getData(qParam(req.url, 'station'), (err, data) => {
       if (err) { res.writeHead(500); res.end(JSON.stringify({ error: err.message })); return; }
       res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' });
-      res.end(JSON.stringify({ SPR_MAP: data.SPR_MAP, count: Object.keys(data.SPR_MAP || {}).length }));
+      res.end(JSON.stringify({ station: data.station, SPR_MAP: data.SPR_MAP, count: Object.keys(data.SPR_MAP || {}).length }));
     });
     return;
   }
@@ -504,7 +512,13 @@ const server = http.createServer((req, res) => {
   }
 
   if (urlPath === '/api/data') {
-    getData((err, data) => {
+    const stationRaw = qParam(req.url, 'station');
+    if (stationRaw != null && !resolveStation(stationRaw)) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: `Estação inválida: ${stationRaw}` }));
+      return;
+    }
+    getData(stationRaw, (err, data) => {
       if (err) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: err.message }));
