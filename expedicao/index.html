@@ -524,6 +524,7 @@
     .to-list { max-height:180px; overflow:auto; border:1px solid var(--border); border-radius:6px; }
     .to-list div { display:flex; justify-content:space-between; padding:4px 8px; font-family:var(--font-mono); font-size:.7rem; border-bottom:1px solid var(--border); }
     .to-list div:last-child { border-bottom:0; }
+    .to-type { font-style:normal; font-size:.62rem; color:var(--muted); border:1px solid var(--border); border-radius:4px; padding:0 5px; margin-left:6px; font-family:var(--font-sans, inherit); }
     .to-empty { font-size:.7rem; color:var(--muted); padding:4px 0; }
     .jmodal-hint    { font-size:.68rem; color:var(--muted); margin-top:var(--space-2); }
     .jmodal-actions { display:flex; gap:var(--space-2); justify-content:flex-end; margin-top:var(--space-4); }
@@ -1560,6 +1561,11 @@ let TO_MAP = {};
 function normDest(s) {
   return (s||'').toString().normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
 }
+function toTypeSummary(g) {
+  const m = {};
+  g.list.forEach(x => { m[x.type || 'Sem tipo'] = (m[x.type || 'Sem tipo'] || 0) + 1; });
+  return Object.entries(m).sort((a, b) => b[1] - a[1]).map(([k, v]) => k + ' ' + v).join(' · ');
+}
 function getTOs(dest) { return TO_MAP[normDest(dest)] || null; }
 
 let _toRow = null;
@@ -1569,8 +1575,8 @@ function openTOs(i) {
   const sb = document.getElementById('tomodalSend'); sb.disabled = false; sb.textContent = 'Enviar report ao SeaTalk';
   const t = getTOs(r.dest) || { packed:{n:0,qty:0,list:[]}, packing:{n:0,qty:0,list:[]} };
   const sec = (title, hint, g) => `<div class="to-sec"><h4><span>${title}</span><span style="font-family:var(--font-mono);color:var(--muted);">${g.n} TOs · ${fmtNum(g.qty)} pcts</span></h4>
-    <div class="jmodal-hint" style="margin:0 0 4px;">${hint}</div>
-    ${g.n ? `<div class="to-list">${g.list.map(x => `<div><span>${x.to}</span><span>${x.t||''} · ${fmtNum(x.qty)}</span></div>`).join('')}</div>` : '<div class="to-empty">Nenhuma TO</div>'}</div>`;
+    <div class="jmodal-hint" style="margin:0 0 4px;">${hint}${g.n ? ' <b>' + toTypeSummary(g) + '</b>' : ''}</div>
+    ${g.n ? `<div class="to-list">${g.list.map(x => `<div><span>${x.to} <em class="to-type">${x.type||''}</em></span><span>${x.t||''} · ${fmtNum(x.qty)}</span></div>`).join('')}</div>` : '<div class="to-empty">Nenhuma TO</div>'}</div>`;
   const total = t.packed.qty + t.packing.qty;
   const gap = r.ship > 0 ? `Carregado/planejado: ${fmtNum(r.ship)} pcts · Packed + Packing: ${fmtNum(total)} pcts` : `Packed + Packing: ${fmtNum(total)} pcts`;
   document.getElementById('tomodalTitle').textContent = r.dest || 'Destino';
@@ -1588,7 +1594,7 @@ function rowClick(e, i) {
 function buildTOReport(r) {
   const t = getTOs(r.dest) || { packed:{n:0,qty:0,list:[]}, packing:{n:0,qty:0,list:[]} };
   const lst = g => {
-    const shown = g.list.slice(0, 30).map(x => `• ${x.to} — ${x.qty} pcts`);
+    const shown = g.list.slice(0, 30).map(x => `• ${x.to} [${x.type || 'Sem tipo'}] — ${x.qty} pcts`);
     if (g.list.length > 30) shown.push(`… +${g.list.length - 30} TOs`);
     return shown.length ? shown.join('\n') : '• Nenhuma TO';
   };
@@ -1598,10 +1604,12 @@ function buildTOReport(r) {
     `Destino: ${r.dest}`,
     `CPT plan: ${r.cp || '—'} · Status: ${r.sr || '—'}`,
     '',
-    `✅ Packed (ainda não endereçadas): ${t.packed.n} TOs · ${fmtNum(t.packed.qty)} pcts`,
+    `✅ Packed (ainda não endereçadas): ${t.packed.n} TOs · ${fmtNum(t.packed.qty)} pcts` + (t.packed.n ? `
+Tipos: ${toTypeSummary(t.packed)}` : ''),
     lst(t.packed),
     '',
-    `🛠 Packing (podem ser finalizadas): ${t.packing.n} TOs · ${fmtNum(t.packing.qty)} pcts`,
+    `🛠 Packing (podem ser finalizadas): ${t.packing.n} TOs · ${fmtNum(t.packing.qty)} pcts` + (t.packing.n ? `
+Tipos: ${toTypeSummary(t.packing)}` : ''),
     lst(t.packing),
     '',
     `Total Packed + Packing: ${fmtNum(t.packed.qty + t.packing.qty)} pcts`,
