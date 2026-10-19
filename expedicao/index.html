@@ -1590,8 +1590,7 @@ function buildTOReport(r) {
   const lst = g => {
     const shown = g.list.slice(0, 30).map(x => `• ${x.to} — ${x.qty} pcts`);
     if (g.list.length > 30) shown.push(`… +${g.list.length - 30} TOs`);
-    return shown.length ? shown.join('
-') : '• Nenhuma TO';
+    return shown.length ? shown.join('\n') : '• Nenhuma TO';
   };
   return [
     `📦 Plano de Expedição ${selStation} — TOs pendentes`,
@@ -1606,8 +1605,7 @@ function buildTOReport(r) {
     lst(t.packing),
     '',
     `Total Packed + Packing: ${fmtNum(t.packed.qty + t.packing.qty)} pcts`,
-  ].join('
-');
+  ].join('\n');
 }
 async function sendTOReport() {
   if (!_toRow) return;
