@@ -1,6 +1,6 @@
-// Vercel Serverless Function — POST /api/justify-spr  (col R = justif. SPR)
+// Vercel Serverless Function — POST /api/justify-spr  (justif. SPR)
 const { getServiceAccountToken }    = require('./_lib/auth');
-const { lookupRowByLT, writeCell }  = require('./_lib/sheets');
+const { lookupRowByLT, writeCell, dailyColLetter }  = require('./_lib/sheets');
 const { STATIONS, resolveStation }  = require('./_lib/stations');
 
 module.exports = async (req, res) => {
@@ -19,7 +19,8 @@ module.exports = async (req, res) => {
 
     const token  = await getServiceAccountToken();
     const rowNum = await lookupRowByLT(token, spreadsheetId, lt);
-    await writeCell(token, spreadsheetId, `Daily!R${rowNum}`, text || '');
+    const col = await dailyColLetter(token, spreadsheetId, 'Justificativa_SPR', 'S');
+    await writeCell(token, spreadsheetId, `Daily!${col}${rowNum}`, text || '');
     console.log(`[justify-spr] ${station} LT="${lt}" → R${rowNum}="${text}"`);
     res.status(200).json({ ok: true, rowNum, station });
   } catch (e) {

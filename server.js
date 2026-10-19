@@ -13,9 +13,10 @@ try {
   });
 } catch (_) {}
 
+const { PACKED_RANGE, PACKING_RANGE, processTOs } = require('./api/_lib/tos');
 const { STATIONS, DEFAULT_STATION, resolveStation } = require('./api/_lib/stations');
 const SPREADSHEET_ID = STATIONS[DEFAULT_STATION].spreadsheetId; // compat p/ handlers legados
-const RANGE          = 'Daily!A1:R3000';
+const RANGE          = 'Daily!A1:T8000';
 const SPR_RANGE      = 'SPR!A1:F500';
 const CACHE_TTL      = 60 * 1000; // 60 seconds
 
@@ -74,136 +75,9 @@ async function getServiceAccountToken() {
 const dataCaches = {}; // station -> { data, fetchedAt }
 const fetchState = {}; // station -> { inProgress, callbacks: [] }
 
-// ── Data-processing helpers (mirrors gen_daily.js logic) ──────────────
-
-function normalizeStr(s) {
-  if (!s || s.trim() === '' || s === '.0') return null;
-  const str = s.trim();
-  if (str.includes('/')) {
-    const [datePart, timePart = '00:00:00'] = str.split(' ');
-    const [m, d, y] = datePart.split('/');
-    const [hh, mm, ss = '00'] = timePart.split(':');
-    return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}T${hh.padStart(2,'0')}:${mm}:${ss}`;
-  }
-  const [datePart, timePart = '00:00:00'] = str.split(' ');
-  const [hh, mm, ss = '00'] = timePart.split(':');
-  return `${datePart}T${hh.padStart(2,'0')}:${mm}:${ss}`;
-}
-
-function extractTime(s) {
-  const n = normalizeStr(s);
-  return n ? n.substring(11, 16) : '';
-}
-
-function perdeuCPT(row) {
-  const robo = normalizeStr(row[9]);
-  const plan = normalizeStr(row[4]);
-  if (!robo || !plan) return false;
-  return robo > plan;
-}
-
-function parseShipments(s) {
-  if (!s || s === '.0' || s === '0.0' || s === '0') return 0;
-  return Math.round(parseFloat(s.trim().replace(/\./g, '').replace(',', '.')) || 0);
-}
-
-// Pacotes_Real (col P, index 15): use if filled; fallback to Shipments (col M, index 12)
-function getShipments(r) {
-  const real = r[15];
-  if (real && real !== '.0' && real !== '0' && real !== '0.0') return parseShipments(real);
-  return parseShipments(r[12]);
-}
-
-const CARREGADAS = new Set(['Carregado', 'Carregado/Liberado', 'Finalizado']);
-
-// SPR: col A=nome, col B=sortcode, col C=carreta, col D=truck, col E=3/4, col F=toco
-function parseSprRaw(raw) {
-  const rows = Array.isArray(raw.values) ? raw.values.slice(1) : [];
-  const map  = {};
-  const parseSprNum = v => {
-    if (v === undefined || v === null || v === '' || v === '-') return null;
-    // UNFORMATTED_VALUE retorna decimais em milhares (ex: 11.145 = 11145 pacotes)
-    if (typeof v === 'number') { const n = Math.round(v * 1000); return n > 0 ? n : null; }
-    let s = v.toString().trim();
-    // Remove sufixo decimal de zeros: "4,116.00" → "4,116" / "4.116,00" → "4.116"
-    s = s.replace(/[.,]0+$/, '');
-    // Remove separadores de milhar restantes
-    s = s.replace(/[.,]/g, '');
-    const n = parseInt(s);
-    return isNaN(n) || n <= 0 ? null : n;
-  };
-  rows.forEach(r => {
-    const sortcode = (r[1] || '').toString().trim();
-    if (!sortcode || sortcode === '-') return;
-    map[sortcode] = {
-      carreta: parseSprNum(r[2]),
-      truck:   parseSprNum(r[3]),
-      trq:     parseSprNum(r[4]),
-      toco:    parseSprNum(r[5]),
-    };
-  });
-  return map;
-}
-
-function processRawData(raw, sprRaw) {
-  const rows   = Array.isArray(raw.values) ? raw.values.slice(1) : [];
-  const byDate = {};
-  const allRows = [];
-
-  rows.forEach((r, i) => {
-    // Date_SoC (col H, index 7) = operational date; fallback to date_cpt (col A)
-    const dateSoc = (r[7] || r[0] || '').substring(0, 10);
-    if (!dateSoc || dateSoc.length < 10) return;
-
-    const turno   = r[13] || '';
-    if (!turno) return;
-
-    const destino = r[11] || '';
-    const doca    = r[14] || '';
-    const statusR = r[10] || '';
-    const pct     = perdeuCPT(r);
-    const ship    = getShipments(r);  // Pacotes_Real (col P) se preenchido, senão Shipments (col M)
-    const isCarr  = CARREGADAS.has(statusR);
-
-    allRows.push({
-      d:      dateSoc,
-      lt:     r[1]  || '',
-      vt:     r[2]  || '',
-      ep:     extractTime(r[3]),
-      cp:     extractTime(r[4]),
-      cr:     extractTime(r[9]),
-      sr:     statusR,
-      dest:   destino,
-      doca:   doca,
-      tr:     turno,
-      ship:   ship,
-      pct:    pct ? 1 : 0,
-      just:    r[16] || '',   // Col Q — justificativa da perda de CPT
-      justSpr: r[17] || '',  // Col R — justificativa de SPR abaixo da meta
-      rowNum: i + 2,         // Número da linha na planilha (header=1, dados a partir de 2)
-    });
-
-    if (!byDate[dateSoc]) byDate[dateSoc] = {};
-    if (!byDate[dateSoc][turno]) byDate[dateSoc][turno] = {
-      total:0, statusReal:{}, destinos:{}, docas:{}, perdeuCPT:0,
-      totalShip:0, carregadas:0, shipCarregadas:0
-    };
-    const tg = byDate[dateSoc][turno];
-    tg.total++;
-    tg.totalShip += ship;
-    tg.statusReal[statusR] = (tg.statusReal[statusR]||0) + 1;
-    if (destino) tg.destinos[destino] = (tg.destinos[destino]||0) + 1;
-    if (doca)    tg.docas[doca]       = (tg.docas[doca]||0) + 1;
-    if (pct)     tg.perdeuCPT++;
-    if (isCarr)  { tg.carregadas++; tg.shipCarregadas += ship; }
-  });
-
-  const dates  = Object.keys(byDate).sort();
-  const sprMap = sprRaw ? parseSprRaw(sprRaw) : {};
-  return { DATES: dates, BY_DATE: byDate, ALL_ROWS: allRows,
-           SPR_MAP: sprMap,
-           generatedAt: Date.now(), rowCount: allRows.length };
-}
+// ── Data processing: compartilhado com as Vercel Functions ────────────
+const { processRawData } = require('./api/_lib/process');
+const { dailyColLetter } = require('./api/_lib/sheets');
 
 // ── Cache / fetch logic ────────────────────────────────────────────────
 
@@ -231,7 +105,7 @@ function gwsFetch(spreadsheetId, range, valueRenderOption) {
 
 function emptyResult(station, reason) {
   return {
-    DATES: [], BY_DATE: {}, ALL_ROWS: [], SPR_MAP: {},
+    DATES: [], BY_DATE: {}, ALL_ROWS: [], SPR_MAP: {}, TO_MAP: {},
     generatedAt: Date.now(), rowCount: 0,
     station, noData: true, reason: reason || null,
   };
@@ -258,9 +132,10 @@ function getData(station, cb) {
     st.callbacks.splice(0).forEach(fn => fn(null, data));
   };
 
-  const finish = (raw, sprRaw) => {
+  const finish = (raw, sprRaw, packedRaw, packingRaw) => {
     const data = processRawData(raw, sprRaw);
     data.station = station;
+    data.TO_MAP  = processTOs(packedRaw, packingRaw);
     if (data.rowCount === 0) data.noData = true;
     const sprCount = Object.keys(data.SPR_MAP || {}).length;
     console.log(`[api/data] ${station} refreshed — ${data.rowCount} rows, ${sprCount} destinos SPR`);
@@ -295,9 +170,11 @@ function getData(station, cb) {
         return Promise.all([
           fetchRange(RANGE),
           safeSpr(fetchRange(SPR_RANGE, '?valueRenderOption=UNFORMATTED_VALUE')),
+          safeSpr(fetchRange(PACKED_RANGE)),
+          safeSpr(fetchRange(PACKING_RANGE)),
         ]);
       })
-      .then(([raw, sprRaw]) => finish(raw, sprRaw))
+      .then(([raw, sprRaw, pk, pg]) => finish(raw, sprRaw, pk, pg))
       .catch(fail);
 
   } else if (USE_API_KEY) {
@@ -309,8 +186,10 @@ function getData(station, cb) {
     Promise.all([
       fetchRange(RANGE),
       safeSpr(fetchRange(SPR_RANGE, '&valueRenderOption=UNFORMATTED_VALUE')),
+      safeSpr(fetchRange(PACKED_RANGE)),
+      safeSpr(fetchRange(PACKING_RANGE)),
     ])
-      .then(([raw, sprRaw]) => finish(raw, sprRaw))
+      .then(([raw, sprRaw, pk, pg]) => finish(raw, sprRaw, pk, pg))
       .catch(fail);
 
   } else {
@@ -319,8 +198,10 @@ function getData(station, cb) {
     Promise.all([
       gwsFetch(spreadsheetId, RANGE),
       safeSpr(gwsFetch(spreadsheetId, SPR_RANGE, 'UNFORMATTED_VALUE')),
+      safeSpr(gwsFetch(spreadsheetId, PACKED_RANGE)),
+      safeSpr(gwsFetch(spreadsheetId, PACKING_RANGE)),
     ])
-      .then(([raw, sprRaw]) => finish(raw, sprRaw))
+      .then(([raw, sprRaw, pk, pg]) => finish(raw, sprRaw, pk, pg))
       .catch(fail);
   }
 }
@@ -401,7 +282,8 @@ const server = http.createServer((req, res) => {
         const rowNum = rowIndex + 1; // 1-based
 
         // 2. Escreve na col Q da linha encontrada
-        const range = `Daily!Q${rowNum}`;
+        const col   = await dailyColLetter(token, spreadsheetId, 'Justificativa_CPT', 'R');
+        const range = `Daily!${col}${rowNum}`;
         const url   = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`;
 
         const resp = await fetch(url, {
@@ -462,7 +344,8 @@ const server = http.createServer((req, res) => {
         if (rowIndex === -1) throw new Error(`LT "${lt}" não encontrada na planilha`);
         const rowNum = rowIndex + 1;
 
-        const range = `Daily!R${rowNum}`;
+        const col   = await dailyColLetter(token, spreadsheetId, 'Justificativa_SPR', 'S');
+        const range = `Daily!${col}${rowNum}`;
         const url   = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`;
 
         const resp = await fetch(url, {

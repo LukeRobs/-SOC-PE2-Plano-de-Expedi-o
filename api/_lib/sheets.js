@@ -27,7 +27,18 @@ async function writeCell(token, spreadsheetId, range, value) {
   return resp.json();
 }
 
+// Letra da coluna (ex.: "R") da aba Daily pelo nome do header; fallback = letra padrão
+async function dailyColLetter(token, spreadsheetId, headerName, fallback) {
+  try {
+    const { values } = await fetchRange(token, spreadsheetId, 'Daily!1:1');
+    const i = (values && values[0] || []).findIndex(h => (h || '').toString().trim().toLowerCase() === headerName.toLowerCase());
+    if (i >= 0) return require('./process').colLetter(i);
+  } catch (_) {}
+  return fallback;
+}
+
 module.exports = {
+  dailyColLetter,
   DEFAULT_SPREADSHEET_ID,
   SPREADSHEET_ID: DEFAULT_SPREADSHEET_ID, // alias retrocompatível
   fetchRange, lookupRowByLT, writeCell,

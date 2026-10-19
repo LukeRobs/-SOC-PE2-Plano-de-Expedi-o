@@ -17,9 +17,29 @@ function extractTime(s) {
   return n ? n.substring(11, 16) : '';
 }
 
-function perdeuCPT(row) {
-  const robo = normalizeStr(row[9]);
-  const plan = normalizeStr(row[4]);
+// Colunas da aba Daily localizadas pelo nome do header (a planilha ganhou a coluna "Destino" e
+// deslocou Shipments/Turno/Doca/justificativas). Fallback = layout atual.
+const DAILY_COLS = {
+  lt: ['LT', 1], vt: ['vehicle_type', 2], ep: ['eta_plan', 3], cp: ['cpt_plan', 4],
+  dateSoc: ['Date_SoC', 7], cr: ['cpt_real_robô', 9], sr: ['Status_Real', 10],
+  dest: ['Destination', 11], ship: ['Shipments', 13], turno: ['Turno Real', 14],
+  doca: ['Doca', 15], shipReal: ['Pacotes_Real', 16], just: ['Justificativa_CPT', 17],
+  justSpr: ['Justificativa_SPR', 18],
+};
+function dailyCols(header) {
+  const h = (Array.isArray(header) ? header : []).map(x => (x || '').toString().trim().toLowerCase());
+  const out = {};
+  for (const [k, [name, def]] of Object.entries(DAILY_COLS)) {
+    const i = h.indexOf(name.toLowerCase());
+    out[k] = i >= 0 ? i : def;
+  }
+  return out;
+}
+function colLetter(i) { let s = ''; for (i++; i > 0; i = Math.floor((i - 1) / 26)) s = String.fromCharCode(65 + (i - 1) % 26) + s; return s; }
+
+function perdeuCPT(row, c) {
+  const robo = normalizeStr(row[c.cr]);
+  const plan = normalizeStr(row[c.cp]);
   if (!robo || !plan) return false;
   return robo > plan;
 }
@@ -29,10 +49,10 @@ function parseShipments(s) {
   return Math.round(parseFloat(s.trim().replace(/\./g, '').replace(',', '.')) || 0);
 }
 
-function getShipments(r) {
-  const real = r[15];
+function getShipments(r, c) {
+  const real = r[c.shipReal];
   if (real && real !== '.0' && real !== '0' && real !== '0.0') return parseShipments(real);
-  return parseShipments(r[12]);
+  return parseShipments(r[c.ship]);
 }
 
 const CARREGADAS = new Set(['Carregado', 'Carregado/Liberado', 'Finalizado']);
@@ -65,38 +85,39 @@ function parseSprRaw(raw) {
 }
 
 function processRawData(raw, sprRaw) {
+  const c       = dailyCols(raw.values && raw.values[0]);
   const rows    = Array.isArray(raw.values) ? raw.values.slice(1) : [];
   const byDate  = {};
   const allRows = [];
 
   rows.forEach((r, i) => {
-    const dateSoc = (r[7] || r[0] || '').substring(0, 10);
+    const dateSoc = (r[c.dateSoc] || r[0] || '').substring(0, 10);
     if (!dateSoc || dateSoc.length < 10) return;
-    const turno  = r[13] || '';
+    const turno  = r[c.turno] || '';
     if (!turno) return;
 
-    const destino = r[11] || '';
-    const doca    = r[14] || '';
-    const statusR = r[10] || '';
-    const pct     = perdeuCPT(r);
-    const ship    = getShipments(r);
+    const destino = r[c.dest] || '';
+    const doca    = r[c.doca] || '';
+    const statusR = r[c.sr] || '';
+    const pct     = perdeuCPT(r, c);
+    const ship    = getShipments(r, c);
     const isCarr  = CARREGADAS.has(statusR);
 
     allRows.push({
       d:       dateSoc,
-      lt:      r[1]  || '',
-      vt:      r[2]  || '',
-      ep:      extractTime(r[3]),
-      cp:      extractTime(r[4]),
-      cr:      extractTime(r[9]),
+      lt:      r[c.lt] || '',
+      vt:      r[c.vt] || '',
+      ep:      extractTime(r[c.ep]),
+      cp:      extractTime(r[c.cp]),
+      cr:      extractTime(r[c.cr]),
       sr:      statusR,
       dest:    destino,
       doca:    doca,
       tr:      turno,
       ship:    ship,
       pct:     pct ? 1 : 0,
-      just:    r[16] || '',
-      justSpr: r[17] || '',
+      just:    r[c.just] || '',
+      justSpr: r[c.justSpr] || '',
       rowNum:  i + 2,
     });
 
@@ -121,4 +142,4 @@ function processRawData(raw, sprRaw) {
            SPR_MAP: sprMap, generatedAt: Date.now(), rowCount: allRows.length };
 }
 
-module.exports = { processRawData, parseSprRaw };
+module.exports = { processRawData, parseSprRaw, dailyCols, colLetter };

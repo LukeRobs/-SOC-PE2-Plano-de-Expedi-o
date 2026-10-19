@@ -515,6 +515,15 @@
     }
     .jmodal textarea:focus { border-color:var(--brand); }
 
+    .tobtn { background:var(--brand-soft, rgba(0,0,0,.05)); border:1px solid var(--border); color:var(--text); border-radius:6px; padding:3px 8px; font-size:.68rem; cursor:pointer; white-space:nowrap; font-family:var(--font-mono); }
+    .tobtn:hover { border-color:var(--brand); }
+    .tobtn b { font-weight:700; }
+    .to-sec { margin-top:var(--space-3); }
+    .to-sec h4 { font-size:.74rem; margin:0 0 4px; display:flex; justify-content:space-between; gap:8px; }
+    .to-list { max-height:180px; overflow:auto; border:1px solid var(--border); border-radius:6px; }
+    .to-list div { display:flex; justify-content:space-between; padding:4px 8px; font-family:var(--font-mono); font-size:.7rem; border-bottom:1px solid var(--border); }
+    .to-list div:last-child { border-bottom:0; }
+    .to-empty { font-size:.7rem; color:var(--muted); padding:4px 0; }
     .jmodal-hint    { font-size:.68rem; color:var(--muted); margin-top:var(--space-2); }
     .jmodal-actions { display:flex; gap:var(--space-2); justify-content:flex-end; margin-top:var(--space-4); }
 
@@ -626,6 +635,22 @@
       <button class="jbtn jbtn-cancel" onclick="closeJustify()">Cancelar</button>
       <button class="jbtn jbtn-save" id="jmodalSave" onclick="saveJustify()">Salvar</button>
     </div>
+  </div>
+</div>
+
+<!-- TOs MODAL -->
+<div class="jmodal-overlay" id="tomodalOverlay" onclick="closeTOs(event)">
+  <div class="jmodal">
+    <div class="jmodal-header">
+      <div>
+        <div class="jmodal-title" id="tomodalTitle">TOs</div>
+        <div class="jmodal-lt" id="tomodalSub"></div>
+      </div>
+      <button class="jmodal-close" onclick="closeTOs()" aria-label="Fechar">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div id="tomodalBody"></div>
   </div>
 </div>
 
@@ -803,6 +828,7 @@
           <th>CPT</th>
           <th>Justif. CPT</th>
           <th>Justif. SPR</th>
+          <th>TOs (Packed / Packing)</th>
         </tr>
       </thead>
       <tbody id="tableBody"></tbody>
@@ -938,6 +964,7 @@ function applyData(data) {
   BY_DATE  = data.BY_DATE;
   ALL_ROWS = data.ALL_ROWS;
   SPR_MAP  = data.SPR_MAP || {};
+  TO_MAP   = data.TO_MAP  || {};
   NO_DATA  = !!data.noData || (Array.isArray(data.DATES) && data.DATES.length === 0);
   lastGeneratedAt = data.generatedAt;
   ALL_ROWS.forEach(r => {
@@ -1433,6 +1460,7 @@ function rebuildConcChart() {
 // ── TABLE ──
 let tableRows = [];
 
+const CARREGADAS_UI = new Set(['Carregado','Carregado/Liberado','Finalizado']);
 function renderTable() {
   const search = (document.getElementById('searchBox').value||'').toLowerCase();
   tableRows = ALL_ROWS.filter(r => {
@@ -1450,7 +1478,7 @@ function renderTable() {
 
   const body = document.getElementById('tableBody');
   if (!tableRows.length) {
-    body.innerHTML = `<tr><td colspan="15"><div class="empty-state">${SVG.inbox}<p>Nenhum registro encontrado</p></div></td></tr>`;
+    body.innerHTML = `<tr><td colspan="16"><div class="empty-state">${SVG.inbox}<p>Nenhum registro encontrado</p></div></td></tr>`;
     return;
   }
   body.innerHTML = tableRows.map((r,i) => {
@@ -1487,6 +1515,15 @@ function renderTable() {
       }
     }
 
+    // TOs pendentes (Packed não endereçadas / Packing) para o destino — só viagens ainda não carregadas
+    let toCell = '<td></td>';
+    if (!CARREGADAS_UI.has(r.sr)) {
+      const t = getTOs(r.dest);
+      toCell = t && (t.packed.n || t.packing.n)
+        ? `<td><button class="tobtn" onclick="openTOs(${i})" title="Ver TOs">Packed <b>${t.packed.n}</b> · Packing <b>${t.packing.n}</b></button></td>`
+        : '<td style="color:var(--muted);font-size:.74rem;">—</td>';
+    }
+
     const shipColor = (sprMeta != null && r.ship > 0 && r.ship < sprMeta) ? 'var(--danger)' : (r.ship > 0 ? 'var(--text)' : 'var(--muted)');
 
     return `<tr class="${cptClass}" data-cpt-urgency="">
@@ -1505,6 +1542,7 @@ function renderTable() {
       <td>${cptBadge}</td>
       ${justCell}
       ${justSprCell}
+      ${toCell}
     </tr>`;
   }).join('');
   updateCptAlerts();
@@ -1513,6 +1551,33 @@ function renderTable() {
 function filterTable() { renderTable(); }
 
 // ─── JUSTIFY MODAL ────────────────────────────────────
+let TO_MAP = {};
+function normDest(s) {
+  return (s||'').toString().normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+}
+function getTOs(dest) { return TO_MAP[normDest(dest)] || null; }
+
+function openTOs(i) {
+  const r = tableRows[i]; if (!r) return;
+  const t = getTOs(r.dest) || { packed:{n:0,qty:0,list:[]}, packing:{n:0,qty:0,list:[]} };
+  const sec = (title, hint, g) => `<div class="to-sec"><h4><span>${title}</span><span style="font-family:var(--font-mono);color:var(--muted);">${g.n} TOs · ${fmtNum(g.qty)} pcts</span></h4>
+    <div class="jmodal-hint" style="margin:0 0 4px;">${hint}</div>
+    ${g.n ? `<div class="to-list">${g.list.map(x => `<div><span>${x.to}</span><span>${x.t||''} · ${fmtNum(x.qty)}</span></div>`).join('')}</div>` : '<div class="to-empty">Nenhuma TO</div>'}</div>`;
+  const total = t.packed.qty + t.packing.qty;
+  const gap = r.ship > 0 ? `Carregado/planejado: ${fmtNum(r.ship)} pcts · Packed + Packing: ${fmtNum(total)} pcts` : `Packed + Packing: ${fmtNum(total)} pcts`;
+  document.getElementById('tomodalTitle').textContent = r.dest || 'Destino';
+  document.getElementById('tomodalSub').textContent = `LT: ${r.lt}`;
+  document.getElementById('tomodalBody').innerHTML =
+    sec('Packed — ainda não endereçadas', 'Prontas para carregar: destino igual ao da viagem, sem staging.', t.packed) +
+    sec('Packing — podem ser finalizadas', 'Em packing para o mesmo destino; finalizar para completar o carregamento se necessário.', t.packing) +
+    `<div class="jmodal-hint" style="margin-top:var(--space-3);">${gap}</div>`;
+  document.getElementById('tomodalOverlay').classList.add('open');
+}
+function closeTOs(e) {
+  if (e && e.target !== document.getElementById('tomodalOverlay')) return;
+  document.getElementById('tomodalOverlay').classList.remove('open');
+}
+
 let _justifyLT   = null;
 let _justifyType = 'cpt'; // 'cpt' | 'spr'
 
