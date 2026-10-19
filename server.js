@@ -78,6 +78,7 @@ const fetchState = {}; // station -> { inProgress, callbacks: [] }
 // ── Data processing: compartilhado com as Vercel Functions ────────────
 const { processRawData } = require('./api/_lib/process');
 const { dailyColLetter } = require('./api/_lib/sheets');
+const { sendGroupText } = require('./api/_lib/seatalk');
 
 // ── Cache / fetch logic ────────────────────────────────────────────────
 
@@ -243,6 +244,25 @@ const server = http.createServer((req, res) => {
       } catch (e) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Invalid JSON' }));
+      }
+    });
+    return;
+  }
+
+  // POST /api/seatalk-report — envia o report de TOs da viagem ao grupo SeaTalk
+  if (urlPath === '/api/seatalk-report' && req.method === 'POST') {
+    let body = '';
+    req.on('data', d => { body += d; });
+    req.on('end', async () => {
+      try {
+        const { text } = JSON.parse(body || '{}');
+        await sendGroupText(text);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
+      } catch (e) {
+        console.error('[seatalk-report]', e.message);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
       }
     });
     return;

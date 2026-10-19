@@ -652,6 +652,10 @@
       </button>
     </div>
     <div id="tomodalBody"></div>
+    <div class="jmodal-actions">
+      <button class="jbtn jbtn-cancel" onclick="closeTOs()">Fechar</button>
+      <button class="jbtn jbtn-save" id="tomodalSend" onclick="sendTOReport()">Enviar report ao SeaTalk</button>
+    </div>
   </div>
 </div>
 
@@ -1558,8 +1562,11 @@ function normDest(s) {
 }
 function getTOs(dest) { return TO_MAP[normDest(dest)] || null; }
 
+let _toRow = null;
 function openTOs(i) {
   const r = tableRows[i]; if (!r) return;
+  _toRow = r;
+  const sb = document.getElementById('tomodalSend'); sb.disabled = false; sb.textContent = 'Enviar report ao SeaTalk';
   const t = getTOs(r.dest) || { packed:{n:0,qty:0,list:[]}, packing:{n:0,qty:0,list:[]} };
   const sec = (title, hint, g) => `<div class="to-sec"><h4><span>${title}</span><span style="font-family:var(--font-mono);color:var(--muted);">${g.n} TOs · ${fmtNum(g.qty)} pcts</span></h4>
     <div class="jmodal-hint" style="margin:0 0 4px;">${hint}</div>
@@ -1577,6 +1584,48 @@ function openTOs(i) {
 function rowClick(e, i) {
   if (e.target.closest('button, .just-text, a')) return; // botões de justificativa têm ação própria
   openTOs(i);
+}
+function buildTOReport(r) {
+  const t = getTOs(r.dest) || { packed:{n:0,qty:0,list:[]}, packing:{n:0,qty:0,list:[]} };
+  const lst = g => {
+    const shown = g.list.slice(0, 30).map(x => `• ${x.to} — ${x.qty} pcts`);
+    if (g.list.length > 30) shown.push(`… +${g.list.length - 30} TOs`);
+    return shown.length ? shown.join('
+') : '• Nenhuma TO';
+  };
+  return [
+    `📦 Plano de Expedição ${selStation} — TOs pendentes`,
+    `Viagem: ${r.lt}${r.vt ? ' · ' + r.vt : ''} · ${r.tr}`,
+    `Destino: ${r.dest}`,
+    `CPT plan: ${r.cp || '—'} · Status: ${r.sr || '—'}`,
+    '',
+    `✅ Packed (ainda não endereçadas): ${t.packed.n} TOs · ${fmtNum(t.packed.qty)} pcts`,
+    lst(t.packed),
+    '',
+    `🛠 Packing (podem ser finalizadas): ${t.packing.n} TOs · ${fmtNum(t.packing.qty)} pcts`,
+    lst(t.packing),
+    '',
+    `Total Packed + Packing: ${fmtNum(t.packed.qty + t.packing.qty)} pcts`,
+  ].join('
+');
+}
+async function sendTOReport() {
+  if (!_toRow) return;
+  const btn = document.getElementById('tomodalSend');
+  btn.disabled = true; btn.textContent = 'Enviando…';
+  try {
+    const resp = await fetch('/api/seatalk-report', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: buildTOReport(_toRow) }),
+    });
+    const j = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(j.error || 'HTTP ' + resp.status);
+    btn.textContent = 'Enviado ✓';
+    showRefreshToast('Report enviado ao SeaTalk');
+  } catch (e) {
+    btn.disabled = false; btn.textContent = 'Erro — tentar novamente'; btn.title = e.message;
+    showRefreshToast('Erro ao enviar: ' + e.message);
+  }
 }
 function closeTOs(e) {
   if (e && e.target !== document.getElementById('tomodalOverlay')) return;
