@@ -515,6 +515,7 @@
     }
     .jmodal textarea:focus { border-color:var(--brand); }
 
+    tr.row-click { cursor:pointer; }
     .tobtn { background:var(--brand-soft, rgba(0,0,0,.05)); border:1px solid var(--border); color:var(--text); border-radius:6px; padding:3px 8px; font-size:.68rem; cursor:pointer; white-space:nowrap; font-family:var(--font-mono); }
     .tobtn:hover { border-color:var(--brand); }
     .tobtn b { font-weight:700; }
@@ -1526,7 +1527,7 @@ function renderTable() {
 
     const shipColor = (sprMeta != null && r.ship > 0 && r.ship < sprMeta) ? 'var(--danger)' : (r.ship > 0 ? 'var(--text)' : 'var(--muted)');
 
-    return `<tr class="${cptClass}" data-cpt-urgency="">
+    return `<tr class="${cptClass} row-click" data-cpt-urgency="" onclick="rowClick(event,${i})">
       <td style="color:var(--muted);font-size:.66rem;font-variant-numeric:tabular-nums;">${i+1}</td>
       <td><code>${r.lt}</code></td>
       <td>${vtTag(r.vt)}</td>
@@ -1572,6 +1573,10 @@ function openTOs(i) {
     sec('Packing — podem ser finalizadas', 'Em packing para o mesmo destino; finalizar para completar o carregamento se necessário.', t.packing) +
     `<div class="jmodal-hint" style="margin-top:var(--space-3);">${gap}</div>`;
   document.getElementById('tomodalOverlay').classList.add('open');
+}
+function rowClick(e, i) {
+  if (e.target.closest('button, .just-text, a')) return; // botões de justificativa têm ação própria
+  openTOs(i);
 }
 function closeTOs(e) {
   if (e && e.target !== document.getElementById('tomodalOverlay')) return;
