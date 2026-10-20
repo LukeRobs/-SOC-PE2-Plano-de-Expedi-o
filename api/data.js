@@ -5,7 +5,7 @@ const { processRawData }                      = require('./_lib/process');
 const { PACKED_RANGE, PACKING_RANGE, processTOs } = require('./_lib/tos');
 const { STATIONS, DEFAULT_STATION, resolveStation } = require('./_lib/stations');
 
-const RANGE     = 'Daily!A1:T8000';
+const RANGE     = 'Daily!A1:T12000';
 const SPR_RANGE = 'SPR!A1:F500';
 
 const caches = {}; // station -> { data, exp }

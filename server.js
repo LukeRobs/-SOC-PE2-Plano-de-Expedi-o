@@ -16,7 +16,7 @@ try {
 const { PACKED_RANGE, PACKING_RANGE, processTOs } = require('./api/_lib/tos');
 const { STATIONS, DEFAULT_STATION, resolveStation } = require('./api/_lib/stations');
 const SPREADSHEET_ID = STATIONS[DEFAULT_STATION].spreadsheetId; // compat p/ handlers legados
-const RANGE          = 'Daily!A1:T8000';
+const RANGE          = 'Daily!A1:T12000';
 const SPR_RANGE      = 'SPR!A1:F500';
 const CACHE_TTL      = 60 * 1000; // 60 seconds
 
