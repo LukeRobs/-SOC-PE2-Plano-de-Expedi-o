@@ -22,7 +22,7 @@ function extractTime(s) {
 const DAILY_COLS = {
   lt: ['LT', 1], vt: ['vehicle_type', 2], ep: ['eta_plan', 3], cp: ['cpt_plan', 4],
   dateSoc: ['Date_SoC', 7], cr: ['cpt_real_robô', 9], sr: ['Status_Real', 10],
-  dest: ['Destination', 11], ship: ['Shipments', 13], turno: ['Turno Real', 14],
+  dest: ['Destination', 11], turnoPlan: ['Turno cpt_plan', 8], ship: ['Shipments', 13], turno: ['Turno Real', 14],
   doca: ['Doca', 15], shipReal: ['Pacotes_Real', 16], just: ['Justificativa_CPT', 17],
   justSpr: ['Justificativa_SPR', 18],
 };
@@ -101,6 +101,11 @@ function processRawData(raw, sprRaw, baseTurnos) {
     // Base de Expedição manda: se o turno diverge do "Turno Real" da Daily (ou está vazio/erro), usa o da Base
     const turnoBase = baseTurnos && baseTurnos[(r[c.lt] || '').toString().trim()];
     if (turnoBase && turnoBase !== turno) turno = turnoBase;
+    // Sem turno na Base nem na Daily (ex.: 3/4 e TOCO ainda fora da Base): usa o "Turno cpt_plan"
+    if (!/^T[1-3]$/.test(turno)) {
+      const tp = (r[c.turnoPlan] || '').toString().trim().toUpperCase();
+      if (/^T[1-3]$/.test(tp)) turno = tp;
+    }
     if (!turno) return;
 
     const destino = r[c.dest] || '';
