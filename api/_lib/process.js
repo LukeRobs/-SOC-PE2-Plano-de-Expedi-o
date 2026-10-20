@@ -84,16 +84,23 @@ function parseSprRaw(raw) {
   return map;
 }
 
-function processRawData(raw, sprRaw) {
+function processRawData(raw, sprRaw, baseTurnos) {
   const c       = dailyCols(raw.values && raw.values[0]);
   const rows    = Array.isArray(raw.values) ? raw.values.slice(1) : [];
   const byDate  = {};
   const allRows = [];
 
+  const seenLT = new Set();
   rows.forEach((r, i) => {
+    // LT duplicada (ex.: linha manual + linha vinda da base_LH): vale a primeira ocorrência
+    const ltKey = (r[c.lt] || '').toString().trim();
+    if (ltKey) { if (seenLT.has(ltKey)) return; seenLT.add(ltKey); }
     const dateSoc = (r[c.dateSoc] || r[0] || '').substring(0, 10);
     if (!dateSoc || dateSoc.length < 10) return;
-    const turno  = r[c.turno] || '';
+    let turno = r[c.turno] || '';
+    // Base de Expedição manda: se o turno diverge do "Turno Real" da Daily (ou está vazio/erro), usa o da Base
+    const turnoBase = baseTurnos && baseTurnos[(r[c.lt] || '').toString().trim()];
+    if (turnoBase && turnoBase !== turno) turno = turnoBase;
     if (!turno) return;
 
     const destino = r[c.dest] || '';

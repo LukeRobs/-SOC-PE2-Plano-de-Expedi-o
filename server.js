@@ -13,6 +13,7 @@ try {
   });
 } catch (_) {}
 
+const { BASE_EXP_RANGE, parseBaseTurnos } = require('./api/_lib/base-exp');
 const { PACKED_RANGE, PACKING_RANGE, processTOs } = require('./api/_lib/tos');
 const { STATIONS, DEFAULT_STATION, resolveStation } = require('./api/_lib/stations');
 const SPREADSHEET_ID = STATIONS[DEFAULT_STATION].spreadsheetId; // compat p/ handlers legados
@@ -133,8 +134,8 @@ function getData(station, cb) {
     st.callbacks.splice(0).forEach(fn => fn(null, data));
   };
 
-  const finish = (raw, sprRaw, packedRaw, packingRaw) => {
-    const data = processRawData(raw, sprRaw);
+  const finish = (raw, sprRaw, packedRaw, packingRaw, baseRaw) => {
+    const data = processRawData(raw, sprRaw, parseBaseTurnos(baseRaw));
     data.station = station;
     data.TO_MAP  = processTOs(packedRaw, packingRaw);
     if (data.rowCount === 0) data.noData = true;
@@ -173,9 +174,10 @@ function getData(station, cb) {
           safeSpr(fetchRange(SPR_RANGE, '?valueRenderOption=UNFORMATTED_VALUE')),
           safeSpr(fetchRange(PACKED_RANGE)),
           safeSpr(fetchRange(PACKING_RANGE)),
+          safeSpr(fetchRange(BASE_EXP_RANGE)),
         ]);
       })
-      .then(([raw, sprRaw, pk, pg]) => finish(raw, sprRaw, pk, pg))
+      .then(([raw, sprRaw, pk, pg, be]) => finish(raw, sprRaw, pk, pg, be))
       .catch(fail);
 
   } else if (USE_API_KEY) {
@@ -189,8 +191,9 @@ function getData(station, cb) {
       safeSpr(fetchRange(SPR_RANGE, '&valueRenderOption=UNFORMATTED_VALUE')),
       safeSpr(fetchRange(PACKED_RANGE)),
       safeSpr(fetchRange(PACKING_RANGE)),
+      safeSpr(fetchRange(BASE_EXP_RANGE)),
     ])
-      .then(([raw, sprRaw, pk, pg]) => finish(raw, sprRaw, pk, pg))
+      .then(([raw, sprRaw, pk, pg, be]) => finish(raw, sprRaw, pk, pg, be))
       .catch(fail);
 
   } else {
@@ -201,8 +204,9 @@ function getData(station, cb) {
       safeSpr(gwsFetch(spreadsheetId, SPR_RANGE, 'UNFORMATTED_VALUE')),
       safeSpr(gwsFetch(spreadsheetId, PACKED_RANGE)),
       safeSpr(gwsFetch(spreadsheetId, PACKING_RANGE)),
+      safeSpr(gwsFetch(spreadsheetId, BASE_EXP_RANGE)),
     ])
-      .then(([raw, sprRaw, pk, pg]) => finish(raw, sprRaw, pk, pg))
+      .then(([raw, sprRaw, pk, pg, be]) => finish(raw, sprRaw, pk, pg, be))
       .catch(fail);
   }
 }

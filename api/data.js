@@ -2,6 +2,7 @@
 const { getServiceAccountToken }              = require('./_lib/auth');
 const { fetchRange }                          = require('./_lib/sheets');
 const { processRawData }                      = require('./_lib/process');
+const { BASE_EXP_RANGE, parseBaseTurnos } = require('./_lib/base-exp');
 const { PACKED_RANGE, PACKING_RANGE, processTOs } = require('./_lib/tos');
 const { STATIONS, DEFAULT_STATION, resolveStation } = require('./_lib/stations');
 
@@ -36,7 +37,7 @@ module.exports = async (req, res) => {
 
   try {
     const token = await getServiceAccountToken();
-    const [raw, sprRaw, packedRaw, packingRaw] = await Promise.all([
+    const [raw, sprRaw, packedRaw, packingRaw, baseRaw] = await Promise.all([
       fetchRange(token, spreadsheetId, RANGE).catch(err => {
         // Estação sem acesso / aba Daily inexistente → trata como "sem dados" (só para estações não-padrão)
         if (station === DEFAULT_STATION) throw err;
@@ -45,13 +46,14 @@ module.exports = async (req, res) => {
       fetchRange(token, spreadsheetId, SPR_RANGE, '?valueRenderOption=UNFORMATTED_VALUE').catch(() => ({ values: [] })),
       fetchRange(token, spreadsheetId, PACKED_RANGE).catch(() => ({ values: [] })),
       fetchRange(token, spreadsheetId, PACKING_RANGE).catch(() => ({ values: [] })),
+      fetchRange(token, spreadsheetId, BASE_EXP_RANGE).catch(() => ({ values: [] })),
     ]);
 
     let result;
     if (raw && raw.__error) {
       result = emptyResult(station, raw.__error);
     } else {
-      result = processRawData(raw, sprRaw);
+      result = processRawData(raw, sprRaw, parseBaseTurnos(baseRaw));
       result.station = station;
       result.TO_MAP  = processTOs(packedRaw, packingRaw);
       if (result.rowCount === 0) result.noData = true;
